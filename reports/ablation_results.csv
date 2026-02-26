@@ -1,8 +1,0 @@
-feature_set,num_features,accuracy
-top8_from_importance,8,0.5396825396825397
-without_bb,31,0.49206349206349204
-without_rsi,35,0.49206349206349204
-top12_from_importance,12,0.49206349206349204
-without_volatility,35,0.48677248677248675
-all_features,36,0.47619047619047616
-top10_from_importance,10,0.47619047619047616

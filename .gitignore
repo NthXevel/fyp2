@@ -1,0 +1,49 @@
+# Environment variables / secrets
+.env
+.env.*
+*.env
+
+# API keys & credentials
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.secret
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Model files (may contain sensitive data)
+models/*.pkl
+models/*.sav
+models/*.joblib
+
+# Logs
+*.log
