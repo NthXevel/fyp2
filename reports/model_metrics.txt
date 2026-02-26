@@ -1,0 +1,25 @@
+Model Performance Summary - AAPL (15m)
+==================================================
+
+Data Interval:          15m
+Features (8):  ['Return', 'EMA_10', 'EMA_20', 'RSI_14', 'MACD_Hist', 'Volatility_14', 'Return_Lag_1', 'Return_Lag_3']
+Position Sizing:        Confidence-based ($200 – $2000)
+Confidence Threshold:   0.55
+Stop-Loss:              20.0% (per order value)
+Take-Profit:            20.0% (per order value)
+Initial Capital:        $100,000.00
+Final Capital:          $99,997.20
+Cumulative Return:      -0.00%
+
+Best CV Accuracy:       0.5272
+Baseline Test Accuracy: 0.4847
+Final Test Accuracy:    0.5357
+
+--- Target Metrics ---
+Accuracy:   0.5357  (target >= 0.55)  [MISSED]
+Sharpe:     -9.357   (target >= 0.5)   [MISSED]
+Max DD:     -0.00%  (target <= 10%)   [MET]
+
+Win Rate:               50.00%
+Number of Trades:       15
+Best Params:            {'colsample_bytree': 0.8, 'learning_rate': 0.01, 'max_depth': 3, 'n_estimators': 400, 'reg_alpha': 0, 'reg_lambda': 1.0, 'subsample': 1.0}
