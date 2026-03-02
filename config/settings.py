@@ -19,21 +19,30 @@ ALPACA_BASE_URL = os.getenv('ALPACA_BASE_URL', 'https://paper-api.alpaca.markets
 # Trading Configuration
 STOCK_SYMBOL = os.getenv('STOCK_SYMBOL', 'AAPL')
 INVESTMENT_AMOUNT = float(os.getenv('INVESTMENT_AMOUNT', '1000'))
-MODEL_PATH = os.getenv('MODEL_PATH', 'models/xgboost_model.pkl')
+MODEL_PATH = os.getenv('MODEL_PATH', 'models/saved/xgboost_model.pkl')
+
+# ── Multi-stock training ─────────────────────────────────────────────
+# Comma-separated list of symbols used for training.
+# The model learns general patterns across all these tickers.
+# At inference time it still trades STOCK_SYMBOL.
+TRAINING_SYMBOLS = [
+    s.strip() for s in
+    os.getenv('TRAINING_SYMBOLS', 'AAPL,MSFT,GOOGL,AMZN,META').split(',')
+]
+# Interval & lookback for training data (separate from live-trading interval)
+TRAINING_INTERVAL = os.getenv('TRAINING_INTERVAL', '1d')    # '1d' for years of history
+TRAINING_DAYS = int(os.getenv('TRAINING_DAYS', '730'))       # ~2 years of daily bars
 
 # Confidence-based position sizing
-# Only enter a trade when confidence exceeds CONFIDENCE_THRESHOLD.
-# A higher threshold filters out marginal signals, which lifts both
-# accuracy and Sharpe while keeping drawdown in check.
 CONFIDENCE_THRESHOLD = float(os.getenv('CONFIDENCE_THRESHOLD', '0.55'))
 MIN_INVESTMENT_AMOUNT = float(os.getenv('MIN_INVESTMENT_AMOUNT', '200'))
-MAX_INVESTMENT_AMOUNT = float(os.getenv('MAX_INVESTMENT_AMOUNT', '2000'))
+MAX_INVESTMENT_AMOUNT = float(os.getenv('MAX_INVESTMENT_AMOUNT', '20000'))
 
 # Risk management -- per-order stop-loss / take-profit (based on order value)
 STOP_LOSS_PCT = float(os.getenv('STOP_LOSS_PCT', '0.20'))      # 20 % per order
 TAKE_PROFIT_PCT = float(os.getenv('TAKE_PROFIT_PCT', '0.20'))   # 20 % per order
 
-# Data Configuration
+# Data Configuration (live trading interval — kept for run_bot / data_fetcher)
 DATA_INTERVAL = os.getenv('DATA_INTERVAL', '15m')  # 15-minute bars
 DATA_DAYS = int(os.getenv('DATA_DAYS', '59'))       # Yahoo allows max 60 days for 15m
 

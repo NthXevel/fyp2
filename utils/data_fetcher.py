@@ -1,10 +1,13 @@
 """
-Data fetching module for retrieving stock data from Yahoo Finance
+Data fetching module — Yahoo Finance historical bars.
+
+• Yahoo Finance: daily/weekly data (years of history), 15m limited to ~60 days.
 """
 import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
-from src.config import STOCK_SYMBOL, DATA_INTERVAL, DATA_DAYS
+
+from config.settings import STOCK_SYMBOL, DATA_INTERVAL, DATA_DAYS
 
 
 class DataFetcher:
@@ -151,3 +154,5 @@ class DataFetcher:
         except Exception as e:
             print(f"Exception occurred while fetching company info: {e}")
             return None
+
+

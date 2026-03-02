@@ -1,12 +1,14 @@
 """
-Trading execution module using Alpaca API
+Alpaca order management module
 
-Risk-management features added to target:
-    • Sharpe  ≥ 0.5
-    • Max DD  ≤ 10 %
+Handles all interactions with the Alpaca brokerage API:
+    • Account information
+    • Position queries
+    • Order placement (buy / sell)
+    • Order history
 """
 import alpaca_trade_api as tradeapi
-from src.config import (
+from config.settings import (
     ALPACA_API_KEY, ALPACA_SECRET_KEY, ALPACA_BASE_URL,
     STOCK_SYMBOL, STOP_LOSS_PCT, TAKE_PROFIT_PCT,
 )
@@ -155,3 +157,49 @@ class TradingExecutor:
         except Exception as e:
             print(f"Error getting order history: {e}")
             return None
+
+    # ── Methods used by the Streamlit dashboard ───────────────────────
+
+    def get_all_positions(self):
+        """
+        Return a dict keyed by symbol with position details for every
+        open position in the account.
+        """
+        try:
+            positions = self.client.list_positions()
+            return {
+                p.symbol: {
+                    'qty': int(p.qty),
+                    'avg_entry_price': float(p.avg_entry_price),
+                    'current_price': float(p.current_price),
+                    'market_value': float(p.market_value),
+                    'unrealized_pl': float(p.unrealized_pl),
+                    'unrealized_plpc': float(p.unrealized_plpc),
+                }
+                for p in positions
+            }
+        except Exception as e:
+            print(f"Error getting all positions: {e}")
+            return {}
+
+    def get_open_orders(self):
+        """Return a list of open Order objects."""
+        try:
+            return self.client.list_orders(status='open')
+        except Exception as e:
+            print(f"Error getting open orders: {e}")
+            return []
+
+    def cancel_all_orders(self):
+        """Cancel every open order."""
+        try:
+            self.client.cancel_all_orders()
+        except Exception as e:
+            print(f"Error cancelling orders: {e}")
+
+    def close_all_positions(self):
+        """Close every open position."""
+        try:
+            self.client.close_all_positions()
+        except Exception as e:
+            print(f"Error closing positions: {e}")

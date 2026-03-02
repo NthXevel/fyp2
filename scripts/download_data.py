@@ -1,12 +1,12 @@
 """
-Data Downloader - Downloads historical stock data to local CSV files.
+Data Downloader — Downloads historical stock data to local CSV files.
+Uses Yahoo Finance as data source.
 
 Usage:
-    python download_data.py                        # Download default symbol (from .env) with 1 year of data
-    python download_data.py --symbol TSLA          # Download specific symbol
-    python download_data.py --symbols AAPL TSLA MSFT  # Download multiple symbols
-    python download_data.py --days 730             # Download 2 years of data
-    python download_data.py --interval 1h          # Download hourly data (max 730 days)
+    python -m scripts.download_data                                    # Download TRAINING_SYMBOLS, daily, 2yr
+    python -m scripts.download_data --symbol TSLA                      # Single symbol
+    python -m scripts.download_data --symbols AAPL TSLA MSFT           # Multiple symbols
+    python -m scripts.download_data --days 730 --interval 1d           # 2 years daily
 """
 
 import argparse
@@ -16,9 +16,9 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 import yfinance as yf
-from src.config import STOCK_SYMBOL
+from config.settings import STOCK_SYMBOL, TRAINING_SYMBOLS, TRAINING_INTERVAL, TRAINING_DAYS
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 
 
 def download_stock_data(symbol: str, days: int = 365, interval: str = "1d") -> pd.DataFrame | None:
@@ -93,14 +93,15 @@ def main():
     parser = argparse.ArgumentParser(description="Download historical stock data to CSV.")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--symbol", type=str, default=None,
-                       help="Single ticker symbol to download (default: from .env)")
+                       help="Single ticker symbol to download")
     group.add_argument("--symbols", nargs="+", type=str, default=None,
                        help="Multiple ticker symbols to download")
-    parser.add_argument("--days", type=int, default=59,
-                        help="Number of calendar days of history (default: 59, max ~60 for 15m)")
-    parser.add_argument("--interval", type=str, default="15m",
-                        choices=["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "1d", "5d", "1wk", "1mo", "3mo"],
-                        help="Data interval (default: 15m)")
+    parser.add_argument("--days", type=int, default=TRAINING_DAYS,
+                        help=f"Days of history (default: {TRAINING_DAYS})")
+    parser.add_argument("--interval", type=str, default=TRAINING_INTERVAL,
+                        choices=["1m", "2m", "5m", "15m", "30m", "60m", "90m",
+                                 "1h", "1d", "5d", "1wk", "1mo", "3mo"],
+                        help=f"Data interval (default: {TRAINING_INTERVAL})")
     args = parser.parse_args()
 
     # Resolve symbol list
@@ -109,32 +110,33 @@ def main():
     elif args.symbol:
         symbols = [args.symbol.upper()]
     else:
-        symbols = [STOCK_SYMBOL.upper()]
+        symbols = [s.upper() for s in TRAINING_SYMBOLS]
 
-    print(f"\n{'='*50}")
-    print(f"Stock Data Downloader")
+    print(f"\n{'=' * 50}")
+    print(f"Stock Data Downloader  (YAHOO)")
     print(f"Symbols : {', '.join(symbols)}")
     print(f"Days    : {args.days}")
     print(f"Interval: {args.interval}")
-    print(f"{'='*50}\n")
+    print(f"{'=' * 50}\n")
 
     saved_files = []
     for symbol in symbols:
         df = download_stock_data(symbol, days=args.days, interval=args.interval)
+
         if df is not None:
             path = save_to_csv(df, symbol, args.interval)
             saved_files.append(path)
         print()
 
     # Summary
-    print(f"{'='*50}")
+    print(f"{'=' * 50}")
     if saved_files:
         print(f"Done! {len(saved_files)} file(s) saved to '{DATA_DIR}':")
         for f in saved_files:
             print(f"  - {f}")
     else:
         print("No data was downloaded.")
-    print(f"{'='*50}")
+    print(f"{'=' * 50}")
 
 
 if __name__ == "__main__":

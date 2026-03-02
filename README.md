@@ -6,20 +6,41 @@ A Python-based quantitative trading system using XGBoost machine learning model,
 
 ```
 fyp2/
-├── src/
-│   ├── config.py              # Configuration and environment variables
-│   ├── data_fetcher.py        # Yahoo Finance integration for data fetching
-│   ├── feature_engineering.py # Technical indicators and feature creation
-│   ├── model_trainer.py       # XGBoost model training and evaluation
-│   ├── trading_executor.py    # Alpaca API integration for trade execution
-│   └── __init__.py
-├── data/                      # Directory for storing historical data
-├── models/                    # Directory for saved trained models
-├── train_model.py            # Script to train the XGBoost model
-├── trading_bot.py            # Main trading bot for live execution
-├── requirements.txt          # Python dependencies
-├── .env.example              # Example environment variables
-└── README.md                 # This file
+├── config/                         # Configuration files
+│   ├── __init__.py
+│   └── settings.py                 # Environment variables & hyperparameters
+├── data/                           # Raw & processed market data
+│   └── AAPL_15m.csv
+├── models/                         # Trained XGBoost models
+│   ├── __init__.py
+│   ├── trainer.py                  # XGBoost training & evaluation
+│   └── saved/                      # Serialised .pkl model files
+├── strategies/                     # Signal generation & position sizing
+│   ├── __init__.py
+│   ├── feature_engineering.py      # Technical indicators & feature creation
+│   └── signal_generator.py         # Buy/sell signals, position sizing, SL/TP
+├── execution/                      # Alpaca order management
+│   ├── __init__.py
+│   └── alpaca_executor.py          # Alpaca API integration
+├── backtesting/                    # Backtesting engine
+│   ├── __init__.py
+│   └── engine.py                   # Historical backtest with SL/TP & metrics
+├── monitoring/                     # Dashboard & alerting
+│   ├── __init__.py
+│   ├── dashboard.py                # Console display for quotes & account
+│   └── logger.py                   # Trade logging to CSV
+├── utils/                          # Shared utilities
+│   ├── __init__.py
+│   └── data_fetcher.py             # Yahoo Finance data fetching
+├── scripts/                        # Entry point scripts
+│   ├── __init__.py
+│   ├── run_bot.py                  # Live trading bot
+│   ├── train.py                    # Model training
+│   └── download_data.py            # Data downloader
+├── reports/                        # Generated reports & plots
+├── experiments.ipynb               # EDA, tuning, backtesting notebook
+├── requirements.txt                # Python dependencies
+└── README.md
 ```
 
 ## Setup Instructions
@@ -45,15 +66,12 @@ pip install -r requirements.txt
 
 ### 4. Configure API Keys
 
-1. Copy `.env.example` to `.env`:
-```bash
-copy .env.example .env
-```
+1. Create a `.env` file in the project root:
 
 2. Get your Alpaca API keys:
    - Sign up at https://alpaca.markets and get your API keys
 
-3. Edit `.env` file and add your Alpaca API keys:
+3. Add your Alpaca API keys to `.env`:
 ```env
 ALPACA_API_KEY=your_key
 ALPACA_SECRET_KEY=your_secret
@@ -61,82 +79,107 @@ ALPACA_SECRET_KEY=your_secret
 
 ## Usage
 
-### Step 1: Train the Model
-
-First, train the XGBoost model using historical data:
+### Download Market Data
 
 ```bash
-python train_model.py
+python -m scripts.download_data
+python -m scripts.download_data --symbol TSLA
+python -m scripts.download_data --symbols AAPL TSLA MSFT
+```
+
+### Train the Model
+
+```bash
+python -m scripts.train
 ```
 
 This script will:
-- Fetch 1 year of historical Apple stock data from Yahoo Finance
-- Engineer 20+ technical indicators
-- Train XGBoost classifier
+- Fetch historical Apple stock data (or load from local CSV)
+- Engineer 8 technical indicator features
+- Train XGBoost classifier with time-series CV hyperparameter search
 - Display model accuracy and feature importance
-- Save the trained model to `models/xgboost_model.pkl`
+- Save the trained model to `models/saved/`
 
-### Step 2: Run the Trading Bot
-
-Once the model is trained, start the trading bot:
+### Run the Trading Bot
 
 ```bash
-python trading_bot.py
+python -m scripts.run_bot
 ```
 
 The bot will:
 - Load the trained model
-- Continuously monitor market conditions every hour
+- Continuously monitor market conditions every 15 minutes
 - Make buy/sell decisions based on model predictions
 - Execute orders via Alpaca API
 - Display account and position information
 
 ## Features
 
-### Data Fetching
+### Data Fetching (`utils/`)
 - Historical data from Yahoo Finance (no API key required)
 - Real-time quotes from Yahoo Finance
-- Ready for backtesting and live trading
 - 1-minute to daily candle data
 
-### Feature Engineering
-- Technical indicators: SMA, EMA, MACD, RSI, Bollinger Bands
-- Price-based features: returns, price range
-- Volume-based features: volume ratio, volume SMA
-- Momentum features
-- Volatility measures
+### Feature Engineering (`strategies/`)
+- Technical indicators: EMA, MACD, RSI
+- Price-based features: returns, lagged returns
+- Volatility measures (14-period rolling std)
 
-### Model
+### Signal Generation (`strategies/`)
+- Confidence-based position sizing ($200 – $20,000)
+- Per-order stop-loss (20%) and take-profit (20%)
+- Threshold filtering for marginal signals
+
+### Model (`models/`)
 - XGBoost binary classifier
-- Predicts daily up/down price movements
-- Configurable hyperparameters in `config.py`
+- Predicts 15-minute bar up/down movements
+- Time-series cross-validation hyperparameter tuning
 
-### Trading
+### Execution (`execution/`)
 - Paper trading support (default) for safe testing
 - Market orders via Alpaca
 - Position tracking and P&L monitoring
-- Account balance management
+
+### Backtesting (`backtesting/`)
+- Historical backtest engine with confidence-based sizing
+- Stop-loss and take-profit simulation
+- Sharpe ratio, max drawdown, win rate metrics
+
+### Monitoring (`monitoring/`)
+- Real-time console dashboard for quotes and account
+- Trade logging to CSV for audit and analysis
 
 ## Configuration
 
-Edit `src/config.py` to customize:
+Edit `config/settings.py` to customize:
 
 ```python
 LOOKBACK_PERIOD = 60          # Days for feature calculation
+CONFIDENCE_THRESHOLD = 0.55   # Minimum confidence to trade
+STOP_LOSS_PCT = 0.20          # 20% per-order stop-loss
+TAKE_PROFIT_PCT = 0.20        # 20% per-order take-profit
 XGB_PARAMS = {
-    'max_depth': 5,           # Tree depth
-    'learning_rate': 0.1,     # Learning rate
-    'n_estimators': 100,      # Number of trees
+    'max_depth': 4,
+    'learning_rate': 0.03,
+    'n_estimators': 300,
 }
-INVESTMENT_AMOUNT = 1000      # Dollar amount per trade
 ```
 
 ## Trading Strategy
 
-The bot uses a simple strategy:
-1. **Buy Signal**: Model predicts >60% probability of price increase
-2. **Sell Signal**: Model predicts >60% probability of price decrease
-3. **Hold**: Confidence below threshold or no existing position/cash
+1. **Buy Signal**: Model predicts >55% probability of price increase
+2. **Sell Signal**: Model predicts >55% probability of price decrease
+3. **Stop-Loss**: Individual order drops 20% from entry → automatic sell
+4. **Take-Profit**: Individual order gains 20% from entry → automatic sell
+5. **Position Sizing**: Investment scaled $200–$20,000 based on confidence
+
+## Performance Targets
+
+| Metric       | Target  |
+|-------------|---------|
+| Accuracy    | ≥ 55%   |
+| Sharpe Ratio| ≥ 0.5   |
+| Max Drawdown| ≤ 10%   |
 
 ## Important Notes
 
@@ -145,43 +188,13 @@ The bot uses a simple strategy:
 ALPACA_BASE_URL=https://api.alpaca.markets
 ```
 
-⚠️ **Risk Disclaimer**: This system is for educational purposes. Trading stocks involves risk of loss. Always:
-- Test thoroughly with paper trading first
-- Use small position sizes
-- Implement proper risk management
-- Monitor the bot regularly
-
-## Troubleshooting
-
-### Model training fails
-- Check Finnhub API key is valid
-- Ensure internet connection
-- Try with fewer days: `fetcher.get_historical_data(days=180)`
-
-### Trading bot crashes
-- Verify Alpaca API keys
-- Check account has sufficient cash/buying power
-- Ensure paper trading URL is correct
-
-### No predictions
-- Verify model file exists at `models/xgboost_model.pkl`
-- Retrain the model if necessary
-
-## Next Steps
-
-To improve the system:
-1. Add more technical indicators
-2. Implement risk management (stop-loss, take-profit)
-3. Add performance metrics and logging
-4. Backtest strategy on historical data
-5. Optimize hyperparameters
-6. Add sentiment analysis
+⚠️ **Risk Disclaimer**: This system is for educational purposes. Trading stocks involves risk of loss. Always test thoroughly with paper trading first.
 
 ## Dependencies
 
 - **XGBoost**: Machine learning library
 - **Alpaca Trade API**: Broker API
-- **Finnhub**: Market data provider
+- **yfinance**: Yahoo Finance market data
 - **Pandas/NumPy**: Data processing
 - **Scikit-learn**: ML utilities
 
