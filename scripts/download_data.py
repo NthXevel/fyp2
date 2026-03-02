@@ -14,9 +14,15 @@ import os
 import sys
 from datetime import datetime, timedelta
 
+# Add project root to Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 import pandas as pd
 import yfinance as yf
-from config.settings import STOCK_SYMBOL, TRAINING_SYMBOLS, TRAINING_INTERVAL, TRAINING_DAYS
+from config.settings import (
+    STOCK_SYMBOL, TRAINING_SYMBOLS, TRAINING_INTERVAL, TRAINING_DAYS,
+    yahoo_symbol, safe_filename,
+)
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 
@@ -26,7 +32,7 @@ def download_stock_data(symbol: str, days: int = 365, interval: str = "1d") -> p
     Download historical OHLCV data for a given symbol from Yahoo Finance.
 
     Args:
-        symbol:   Ticker symbol (e.g. 'AAPL').
+        symbol:   Ticker symbol (e.g. 'AAPL' or 'BTC/USD').
         days:     Number of calendar days of history to fetch.
         interval: Data interval – '1d', '1h', '5m', etc.
 
@@ -36,12 +42,13 @@ def download_stock_data(symbol: str, days: int = 365, interval: str = "1d") -> p
     end_date = datetime.now()
     start_date = end_date - timedelta(days=days)
 
-    print(f"Downloading {symbol} | interval={interval} | "
+    yf_sym = yahoo_symbol(symbol)  # BTC/USD -> BTC-USD for Yahoo
+    print(f"Downloading {symbol} ({yf_sym}) | interval={interval} | "
           f"{start_date.strftime('%Y-%m-%d')} -> {end_date.strftime('%Y-%m-%d')} ...")
 
     try:
         df = yf.download(
-            symbol,
+            yf_sym,
             start=start_date,
             end=end_date,
             interval=interval,
@@ -80,9 +87,11 @@ def download_stock_data(symbol: str, days: int = 365, interval: str = "1d") -> p
 
 
 def save_to_csv(df: pd.DataFrame, symbol: str, interval: str) -> str:
-    """Save a DataFrame to data/<SYMBOL>_<interval>.csv and return the path."""
+    """Save a DataFrame to data/<SYMBOL>_<interval>.csv and return the path.
+    Crypto symbols like BTC/USD are saved as BTCUSD_1d.csv.
+    """
     os.makedirs(DATA_DIR, exist_ok=True)
-    filename = f"{symbol.upper()}_{interval}.csv"
+    filename = f"{safe_filename(symbol)}_{interval}.csv"
     filepath = os.path.join(DATA_DIR, filename)
     df.to_csv(filepath)
     print(f"  -> Saved to {filepath}")

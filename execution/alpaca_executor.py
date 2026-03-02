@@ -11,6 +11,7 @@ import alpaca_trade_api as tradeapi
 from config.settings import (
     ALPACA_API_KEY, ALPACA_SECRET_KEY, ALPACA_BASE_URL,
     STOCK_SYMBOL, STOP_LOSS_PCT, TAKE_PROFIT_PCT,
+    is_crypto, alpaca_symbol,
 )
 
 
@@ -21,7 +22,8 @@ class TradingExecutor:
             secret_key=secret_key,
             base_url=ALPACA_BASE_URL
         )
-        self.symbol = STOCK_SYMBOL
+        self.symbol = alpaca_symbol(STOCK_SYMBOL)
+        self._is_crypto = is_crypto(STOCK_SYMBOL)
     
     def get_account_info(self):
         """
@@ -67,21 +69,23 @@ class TradingExecutor:
     
     def place_buy_order(self, qty):
         """
-        Place a buy market order
+        Place a buy market order.
+        Crypto orders use 'gtc' time-in-force and support fractional qty.
         
         Args:
-            qty: Quantity to buy
+            qty: Quantity to buy (int for stocks, float for crypto)
             
         Returns:
             dict: Order details
         """
         try:
+            tif = 'gtc' if self._is_crypto else 'day'
             order = self.client.submit_order(
                 symbol=self.symbol,
-                qty=qty,
+                qty=str(qty),
                 side='buy',
                 type='market',
-                time_in_force='day'
+                time_in_force=tif
             )
             print(f"Buy order placed: {qty} shares of {self.symbol}")
             return {
@@ -97,21 +101,23 @@ class TradingExecutor:
     
     def place_sell_order(self, qty):
         """
-        Place a sell market order
+        Place a sell market order.
+        Crypto orders use 'gtc' time-in-force and support fractional qty.
         
         Args:
-            qty: Quantity to sell
+            qty: Quantity to sell (int for stocks, float for crypto)
             
         Returns:
             dict: Order details
         """
         try:
+            tif = 'gtc' if self._is_crypto else 'day'
             order = self.client.submit_order(
                 symbol=self.symbol,
-                qty=qty,
+                qty=str(qty),
                 side='sell',
                 type='market',
-                time_in_force='day'
+                time_in_force=tif
             )
             print(f"Sell order placed: {qty} shares of {self.symbol}")
             return {
@@ -125,12 +131,13 @@ class TradingExecutor:
             print(f"Error placing sell order: {e}")
             return None
     
-    def get_order_history(self, limit=10):
+    def get_order_history(self, limit=10, symbol_filter=None):
         """
         Get order history
         
         Args:
             limit: Number of orders to retrieve
+            symbol_filter: Optional symbol to filter by (None = all symbols)
             
         Returns:
             list: List of orders
@@ -140,8 +147,14 @@ class TradingExecutor:
                 status='all',
                 limit=limit
             )
-            return [
-                {
+            results = []
+            for order in orders:
+                # Normalise both sides so BTC/USD, BTCUSD, btc/usd all match
+                if symbol_filter:
+                    norm = lambda s: s.replace('/', '').replace('-', '').upper()
+                    if norm(order.symbol) != norm(symbol_filter):
+                        continue
+                results.append({
                     'order_id': order.id,
                     'symbol': order.symbol,
                     'qty': order.qty,
@@ -149,14 +162,12 @@ class TradingExecutor:
                     'filled_qty': order.filled_qty,
                     'filled_avg_price': order.filled_avg_price,
                     'status': order.status,
-                    'created_at': order.created_at
-                }
-                for order in orders
-                if order.symbol == self.symbol
-            ]
+                    'created_at': order.created_at,
+                })
+            return results
         except Exception as e:
             print(f"Error getting order history: {e}")
-            return None
+            raise
 
     # ── Methods used by the Streamlit dashboard ───────────────────────
 
@@ -169,7 +180,7 @@ class TradingExecutor:
             positions = self.client.list_positions()
             return {
                 p.symbol: {
-                    'qty': int(p.qty),
+                    'qty': float(p.qty),
                     'avg_entry_price': float(p.avg_entry_price),
                     'current_price': float(p.current_price),
                     'market_value': float(p.market_value),
@@ -180,7 +191,7 @@ class TradingExecutor:
             }
         except Exception as e:
             print(f"Error getting all positions: {e}")
-            return {}
+            raise
 
     def get_open_orders(self):
         """Return a list of open Order objects."""
@@ -188,7 +199,7 @@ class TradingExecutor:
             return self.client.list_orders(status='open')
         except Exception as e:
             print(f"Error getting open orders: {e}")
-            return []
+            raise
 
     def cancel_all_orders(self):
         """Cancel every open order."""

@@ -24,6 +24,9 @@ import os
 import sys
 import pandas as pd
 
+# Add project root to Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from utils.data_fetcher import DataFetcher
 from strategies.feature_engineering import FeatureEngineer
 from models.trainer import ModelTrainer
@@ -31,6 +34,7 @@ from config.settings import (
     STOCK_SYMBOL, DATA_INTERVAL, DATA_DAYS,
     TRAINING_SYMBOLS, TRAINING_INTERVAL, TRAINING_DAYS,
     TARGET_ACCURACY, TARGET_SHARPE, TARGET_MAX_DRAWDOWN,
+    safe_filename,
 )
 
 
@@ -47,7 +51,7 @@ def load_symbol_data(symbol: str, interval: str, days: int,
     Load OHLCV data for a single symbol.  Tries local CSV first,
     then falls back to Yahoo or Alpaca.
     """
-    csv_path = os.path.join('data', f'{symbol}_{interval}.csv')
+    csv_path = os.path.join('data', f'{safe_filename(symbol)}_{interval}.csv')
 
     if os.path.exists(csv_path):
         print(f"  Loading local CSV: {csv_path}")

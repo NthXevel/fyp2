@@ -25,9 +25,10 @@ MODEL_PATH = os.getenv('MODEL_PATH', 'models/saved/xgboost_model.pkl')
 # Comma-separated list of symbols used for training.
 # The model learns general patterns across all these tickers.
 # At inference time it still trades STOCK_SYMBOL.
+# Use slash notation for crypto pairs (e.g. BTC/USD).
 TRAINING_SYMBOLS = [
     s.strip() for s in
-    os.getenv('TRAINING_SYMBOLS', 'AAPL,MSFT,GOOGL,AMZN,META').split(',')
+    os.getenv('TRAINING_SYMBOLS', 'AAPL,MSFT,GOOGL,AMZN,META,BTC/USD').split(',')
 ]
 # Interval & lookback for training data (separate from live-trading interval)
 TRAINING_INTERVAL = os.getenv('TRAINING_INTERVAL', '1d')    # '1d' for years of history
@@ -50,6 +51,33 @@ DATA_DAYS = int(os.getenv('DATA_DAYS', '59'))       # Yahoo allows max 60 days f
 LOOKBACK_PERIOD = 60  # Number of days to look back for features
 TEST_SIZE = 0.2
 RANDOM_STATE = 42
+# ── Crypto helpers ────────────────────────────────────────────────────
+def is_crypto(symbol: str) -> bool:
+    """Return True if the symbol looks like a crypto pair (e.g. BTC/USD)."""
+    return '/' in symbol or symbol.upper().endswith('USD') and '-' in symbol
+
+def yahoo_symbol(symbol: str) -> str:
+    """Convert internal symbol notation to Yahoo Finance ticker.
+    BTC/USD  → BTC-USD
+    ETH/USD  → ETH-USD
+    AAPL     → AAPL  (unchanged)
+    """
+    return symbol.replace('/', '-')
+
+def alpaca_symbol(symbol: str) -> str:
+    """Convert internal symbol notation to Alpaca API format.
+    BTC-USD  → BTC/USD
+    BTC/USD  → BTC/USD  (unchanged)
+    AAPL     → AAPL     (unchanged)
+    """
+    if '-' in symbol and symbol.upper().endswith('USD'):
+        return symbol.replace('-', '/')
+    return symbol
+
+def safe_filename(symbol: str) -> str:
+    """Return a filesystem-safe version of a symbol (strip / and -)."""
+    return symbol.replace('/', '').replace('-', '')
+
 XGB_PARAMS = {
     'max_depth': 4,
     'learning_rate': 0.03,

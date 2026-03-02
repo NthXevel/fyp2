@@ -48,9 +48,9 @@ class SignalGenerator:
         else:
             return 'hold', max(prob_up, prob_down)
 
-    def calculate_position_size(self, confidence, current_price):
+    def calculate_position_size(self, confidence, current_price, fractional=False):
         """
-        Calculate the number of shares to buy based on confidence.
+        Calculate the quantity to buy based on confidence.
 
         The investment amount is scaled linearly between MIN and MAX
         investment based on how far above the confidence threshold
@@ -58,15 +58,20 @@ class SignalGenerator:
 
         Args:
             confidence: Model prediction probability (0.0 – 1.0)
-            current_price: Current stock price
+            current_price: Current price
+            fractional: If True, return fractional qty (for crypto).
+                        Otherwise return integer qty (for stocks).
 
         Returns:
-            tuple: (qty: int, investment: float)
+            tuple: (qty: int|float, investment: float)
         """
         scale = (confidence - self.confidence_threshold) / (1.0 - self.confidence_threshold)
         scale = max(0.0, min(1.0, scale))
         investment = self.min_investment + scale * (self.max_investment - self.min_investment)
-        qty = int(investment / current_price)
+        if fractional:
+            qty = round(investment / current_price, 6)  # up to 6 decimal places
+        else:
+            qty = int(investment / current_price)
         return qty, investment
 
     def check_stop_loss_take_profit(self, entry_price, current_price):

@@ -7,14 +7,16 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 
-from config.settings import STOCK_SYMBOL, DATA_INTERVAL, DATA_DAYS
+from config.settings import STOCK_SYMBOL, DATA_INTERVAL, DATA_DAYS, yahoo_symbol
 
 
 class DataFetcher:
     def __init__(self, symbol=STOCK_SYMBOL, interval=DATA_INTERVAL):
         self.symbol = symbol
         self.interval = interval
-        self.ticker = yf.Ticker(symbol)
+        # Yahoo Finance uses dash notation for crypto (BTC-USD)
+        self._yf_symbol = yahoo_symbol(symbol)
+        self.ticker = yf.Ticker(self._yf_symbol)
     
     def get_historical_data(self, days=DATA_DAYS, interval=None):
         """
@@ -36,7 +38,7 @@ class DataFetcher:
             
             # Fetch data from Yahoo Finance at configured interval
             df = yf.download(
-                self.symbol,
+                self._yf_symbol,
                 start=start_date,
                 end=end_date,
                 interval=interval,

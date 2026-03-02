@@ -69,6 +69,11 @@ class ModelTrainer:
     # ── Optuna objective ─────────────────────────────────────────────
     def _objective(self, trial: optuna.Trial, X, y) -> float:
         """Single Optuna trial: train with sampled params, score via walk-forward CV."""
+        # Fix #4 — balance classes so the model doesn't blindly predict "up"
+        pos_count = int((y == 1).sum())
+        neg_count = int((y == 0).sum())
+        scale_weight = neg_count / pos_count if pos_count > 0 else 1.0
+
         params = {
             "n_estimators":      trial.suggest_int("n_estimators", 100, 600),
             "max_depth":         trial.suggest_int("max_depth", 3, 8),
@@ -79,6 +84,7 @@ class ModelTrainer:
             "gamma":             trial.suggest_float("gamma", 0.0, 0.5),
             "reg_alpha":         trial.suggest_float("reg_alpha", 1e-4, 1.0, log=True),
             "reg_lambda":        trial.suggest_float("reg_lambda", 1e-4, 1.0, log=True),
+            "scale_pos_weight":  scale_weight,
             "objective":         "binary:logistic",
             "eval_metric":       "auc",
             "random_state":      RANDOM_STATE,
@@ -148,7 +154,13 @@ class ModelTrainer:
 
         # ── Train final model on full training set ─────────────────
         print("\nTraining final model with best params …")
+        # Fix #4 — class-balance weight for final model too
+        pos_count = int((y_train == 1).sum())
+        neg_count = int((y_train == 0).sum())
+        scale_weight = neg_count / pos_count if pos_count > 0 else 1.0
+
         best_params.update({
+            "scale_pos_weight": scale_weight,
             "objective":    "binary:logistic",
             "eval_metric":  "auc",
             "random_state":  RANDOM_STATE,

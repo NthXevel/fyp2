@@ -9,8 +9,12 @@ Usage:
 """
 import argparse
 import os
+import sys
 import pandas as pd
 from datetime import datetime, timedelta
+
+# Add project root to Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import yfinance as yf
 from config.settings import STOCK_SYMBOL, TRAINING_SYMBOLS

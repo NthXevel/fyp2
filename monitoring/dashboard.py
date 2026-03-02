@@ -41,59 +41,68 @@ def main():
     st.divider()
 
     # ── Positions ─────────────────────────────────────────────────────
-    positions = executor.get_all_positions()
     st.subheader("🟢 Open Positions")
-    if positions:
-        pos_df = (
-            pd.DataFrame(positions)
-            .T.reset_index()
-            .rename(columns={"index": "symbol"})
-        )
-        pos_df["unrealized_pl"] = pos_df["unrealized_pl"].astype(float)
-        st.dataframe(pos_df, use_container_width=True)
+    try:
+        positions = executor.get_all_positions()
+        if positions:
+            pos_df = (
+                pd.DataFrame(positions)
+                .T.reset_index()
+                .rename(columns={"index": "symbol"})
+            )
+            pos_df["unrealized_pl"] = pos_df["unrealized_pl"].astype(float)
+            st.dataframe(pos_df, use_container_width=True)
 
-        # PnL bar chart
-        fig = px.bar(
-            pos_df,
-            x="symbol",
-            y="unrealized_pl",
-            color="unrealized_pl",
-            color_continuous_scale="RdYlGn",
-            title="Unrealized P&L by Position",
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No open positions.")
+            # PnL bar chart
+            fig = px.bar(
+                pos_df,
+                x="symbol",
+                y="unrealized_pl",
+                color="unrealized_pl",
+                color_continuous_scale="RdYlGn",
+                title="Unrealized P&L by Position",
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No open positions.")
+    except Exception as e:
+        st.error(f"Error fetching positions: {e}")
 
     st.divider()
 
     # ── Open Orders ────────────────────────────────────────────────────
     st.subheader("📋 Open Orders")
-    open_orders = executor.get_open_orders()
-    if open_orders:
-        orders_data = [
-            {
-                "id": str(o.id)[:8],
-                "symbol": o.symbol,
-                "side": o.side,
-                "qty": o.qty,
-                "type": o.type,
-                "status": o.status,
-            }
-            for o in open_orders
-        ]
-        st.dataframe(pd.DataFrame(orders_data), use_container_width=True)
-    else:
-        st.info("No open orders.")
+    try:
+        open_orders = executor.get_open_orders()
+        if open_orders:
+            orders_data = [
+                {
+                    "id": str(o.id)[:8],
+                    "symbol": o.symbol,
+                    "side": o.side,
+                    "qty": o.qty,
+                    "type": o.type,
+                    "status": o.status,
+                }
+                for o in open_orders
+            ]
+            st.dataframe(pd.DataFrame(orders_data), use_container_width=True)
+        else:
+            st.info("No open orders.")
+    except Exception as e:
+        st.error(f"Error fetching open orders: {e}")
 
     # ── Recent Order History ───────────────────────────────────────────
     st.divider()
-    st.subheader(f"📜 Recent {STOCK_SYMBOL} Orders")
-    history = executor.get_order_history(limit=10)
-    if history:
-        st.dataframe(pd.DataFrame(history), use_container_width=True)
-    else:
-        st.info("No recent orders.")
+    st.subheader("📜 Recent Orders (all symbols)")
+    try:
+        history = executor.get_order_history(limit=20)
+        if history:
+            st.dataframe(pd.DataFrame(history), use_container_width=True)
+        else:
+            st.info("No recent orders found.")
+    except Exception as e:
+        st.error(f"Error fetching order history: {e}")
 
     # ── Controls ───────────────────────────────────────────────────────
     st.divider()

@@ -8,7 +8,12 @@ Targets:
 """
 import time
 import sys
+import os
 from datetime import datetime
+
+# Add project root to Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from models.trainer import ModelTrainer
 from utils.data_fetcher import DataFetcher
 from strategies.feature_engineering import FeatureEngineer
@@ -20,6 +25,7 @@ from config.settings import (
     CONFIDENCE_THRESHOLD, MIN_INVESTMENT_AMOUNT, MAX_INVESTMENT_AMOUNT,
     STOP_LOSS_PCT, TAKE_PROFIT_PCT,
     TARGET_ACCURACY, TARGET_SHARPE, TARGET_MAX_DRAWDOWN,
+    is_crypto,
 )
 
 
@@ -34,6 +40,7 @@ class TradingBot:
 
         # Risk-management state
         self.entry_price = None   # track buy price for SL/TP
+        self._is_crypto = is_crypto(STOCK_SYMBOL)
 
         # Load trained model
         if not self.trainer.load():
@@ -85,7 +92,9 @@ class TradingBot:
             quote = self.fetcher.get_realtime_quote()
             if quote:
                 current_price = quote['c']
-                qty, investment = self.signal.calculate_position_size(confidence, current_price)
+                qty, investment = self.signal.calculate_position_size(
+                    confidence, current_price, fractional=self._is_crypto
+                )
 
                 print(f"Confidence: {confidence:.2%} → Investment: ${investment:.2f} → Qty: {qty} shares")
 
@@ -98,9 +107,10 @@ class TradingBot:
                     print(f"Insufficient buying power. Available: ${account['buying_power']}")
 
         elif action == 'sell':
-            if position and int(position['qty']) > 0:
-                self.executor.place_sell_order(int(position['qty']))
-                self.logger.log('SELL', STOCK_SYMBOL, int(position['qty']),
+            if position and float(position['qty']) > 0:
+                sell_qty = float(position['qty']) if self._is_crypto else int(position['qty'])
+                self.executor.place_sell_order(sell_qty)
+                self.logger.log('SELL', STOCK_SYMBOL, sell_qty,
                                 position['current_price'], confidence)
                 self.entry_price = None
             else:

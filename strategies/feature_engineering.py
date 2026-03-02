@@ -1,9 +1,18 @@
 """
 Feature engineering module for preparing data for XGBoost
 
-Fixed feature set (no feature selection needed):
-    Return, EMA_10, EMA_20, RSI_14, MACD_Hist, Volatility_14,
-    Return_Lag_1, Return_Lag_3
+All features are **stationary** (relative / normalised) so that tree
+splits remain valid across different price regimes.
+
+Feature groups:
+    Price-action : Return, Dist_EMA_10, Dist_EMA_20, Volatility_14,
+                   Return_Lag_1, Return_Lag_3
+    Momentum     : RSI_Z (z-scored RSI), MACD_Hist_Norm (normalised)
+    Volume       : OBV_Pct, VWAP_Dist, Volume_Ratio
+    Candle       : Body_Ratio, Upper_Shadow, Lower_Shadow
+
+Target:
+    3-day forward return > +0.5 % → class 1 (Buy), else 0
 
 Supports single-stock and multi-stock training.  When multiple symbols
 are used, a 'symbol' column is carried through but NOT included as a
@@ -12,31 +21,37 @@ model feature — it's only used for tracking / debugging.
 import pandas as pd
 import numpy as np
 
+# How many bars ahead the target looks & minimum move to count as "up"
+FORWARD_BARS = 3
+TARGET_THRESHOLD = 0.005     # 0.5 %
 
 # The exact feature columns used for training / prediction
 FEATURE_COLUMNS = [
-    'Return', 'EMA_10', 'EMA_20', 'RSI_14', 'MACD_Hist',
+    # Price-action (stationary)
+    'Return', 'Dist_EMA_10', 'Dist_EMA_20',
     'Volatility_14', 'Return_Lag_1', 'Return_Lag_3',
+    # Momentum (normalised)
+    'RSI_Z', 'MACD_Hist_Norm',
+    # Volume
+    'OBV_Pct', 'VWAP_Dist', 'Volume_Ratio',
+    # Candle shape
+    'Body_Ratio', 'Upper_Shadow', 'Lower_Shadow',
 ]
 
 
 class FeatureEngineer:
     def __init__(self):
         self.feature_cols = FEATURE_COLUMNS
-    
+
     def create_features(self, df, symbol: str | None = None):
         """
-        Create the fixed set of technical indicators from OHLCV data.
+        Create stationary, diversity-rich features from OHLCV data.
 
-        Output columns (besides OHLCV):
-            Return, EMA_10, EMA_20, RSI_14, MACD_Hist,
-            Volatility_14, Return_Lag_1, Return_Lag_3, Target
-        
         Args:
             df: DataFrame with columns [open, high, low, close, volume]
             symbol: Optional ticker name — added as a 'symbol' column
                     for multi-stock tracking.
-            
+
         Returns:
             pd.DataFrame: DataFrame with engineered features + Target
         """
@@ -44,27 +59,30 @@ class FeatureEngineer:
 
         if symbol is not None:
             df['symbol'] = symbol
-        
+
         # ── Return ───────────────────────────────────────────────────
         df['Return'] = df['close'].pct_change()
 
-        # ── EMA 10 & 20 ─────────────────────────────────────────────
-        df['EMA_10'] = df['close'].ewm(span=10).mean()
-        df['EMA_20'] = df['close'].ewm(span=20).mean()
+        # ── EMA distances (stationary — Fix #1) ─────────────────────
+        df['Dist_EMA_10'] = df['close'] / df['close'].ewm(span=10).mean() - 1
+        df['Dist_EMA_20'] = df['close'] / df['close'].ewm(span=20).mean() - 1
 
-        # ── RSI 14 ──────────────────────────────────────────────────
+        # ── RSI 14 → Z-scored (Fix #3) ──────────────────────────────
         delta = df['close'].diff()
         gain = delta.where(delta > 0, 0).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / loss
-        df['RSI_14'] = 100 - (100 / (1 + rs))
+        rsi = 100 - (100 / (1 + rs))
+        rsi_mean = rsi.rolling(20).mean()
+        rsi_std  = rsi.rolling(20).std()
+        df['RSI_Z'] = (rsi - rsi_mean) / rsi_std.replace(0, np.nan)
 
-        # ── MACD Histogram ──────────────────────────────────────────
+        # ── MACD Histogram — normalised by price (Fix #1) ───────────
         ema_12 = df['close'].ewm(span=12).mean()
         ema_26 = df['close'].ewm(span=26).mean()
-        macd_line = ema_12 - ema_26
+        macd_line   = ema_12 - ema_26
         macd_signal = macd_line.ewm(span=9).mean()
-        df['MACD_Hist'] = macd_line - macd_signal
+        df['MACD_Hist_Norm'] = (macd_line - macd_signal) / df['close']
 
         # ── Volatility (14-period rolling std of returns) ───────────
         df['Volatility_14'] = df['Return'].rolling(window=14).std()
@@ -73,9 +91,30 @@ class FeatureEngineer:
         df['Return_Lag_1'] = df['Return'].shift(1)
         df['Return_Lag_3'] = df['Return'].shift(3)
 
-        # ── Target (1 if next bar closes higher, else 0) ───────────
-        df['Target'] = (df['close'].shift(-1) > df['close']).astype(int)
-        
+        # ── Volume features (Fix #3 — feature diversity) ───────────
+        # OBV percentage change (stationary volume momentum)
+        obv = (np.sign(df['close'].diff()) * df['volume']).cumsum()
+        df['OBV_Pct'] = obv.pct_change(5)  # 5-bar OBV momentum
+
+        # VWAP distance (intraday-friendly)
+        cum_vol   = df['volume'].rolling(20).sum()
+        cum_vp    = (df['close'] * df['volume']).rolling(20).sum()
+        vwap      = cum_vp / cum_vol.replace(0, np.nan)
+        df['VWAP_Dist'] = df['close'] / vwap - 1
+
+        # Volume ratio vs 20-bar average
+        df['Volume_Ratio'] = df['volume'] / df['volume'].rolling(20).mean()
+
+        # ── Candle-body features ────────────────────────────────────
+        bar_range = (df['high'] - df['low']).replace(0, np.nan)
+        df['Body_Ratio']   = (df['close'] - df['open']) / bar_range
+        df['Upper_Shadow'] = (df['high'] - df[['open', 'close']].max(axis=1)) / bar_range
+        df['Lower_Shadow'] = (df[['open', 'close']].min(axis=1) - df['low']) / bar_range
+
+        # ── Target — smoothed forward return with threshold (Fix #2)
+        future_return = df['close'].shift(-FORWARD_BARS) / df['close'] - 1
+        df['Target'] = (future_return > TARGET_THRESHOLD).astype(int)
+
         return df
     
     def prepare_training_data(self, df):

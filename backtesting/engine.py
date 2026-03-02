@@ -4,6 +4,7 @@ Backtesting engine for evaluating trading strategies on historical data
 Supports:
     • Confidence-based position sizing
     • Per-order stop-loss and take-profit
+    • Minimum hold period (matches FORWARD_BARS target horizon)
     • Performance metrics: Sharpe ratio, max drawdown, win rate
 """
 import numpy as np
@@ -12,6 +13,7 @@ from config.settings import (
     STOP_LOSS_PCT, TAKE_PROFIT_PCT,
     TARGET_SHARPE, TARGET_MAX_DRAWDOWN, TARGET_ACCURACY,
 )
+from strategies.feature_engineering import FORWARD_BARS
 
 # Approximate number of 15-minute bars in a trading year
 BARS_PER_YEAR = 26 * 252
@@ -34,7 +36,10 @@ class BacktestEngine:
 
     def run(self, test_df, predictions, probabilities):
         """
-        Execute a long-only backtest on 15m bars.
+        Execute a long-only backtest.
+
+        Positions are held for at least FORWARD_BARS bars to match the
+        target horizon.  Stop-loss / take-profit still override.
 
         Args:
             test_df: DataFrame with at least a 'close' column (indexed by datetime)
@@ -47,6 +52,8 @@ class BacktestEngine:
         capital = self.initial_capital
         shares = 0
         entry_price = 0.0
+        bars_held = 0
+        min_hold = FORWARD_BARS          # must hold at least this many bars
         portfolio_values = []
         trade_log = []
 
@@ -57,6 +64,7 @@ class BacktestEngine:
 
             # ── Check stop-loss / take-profit while holding ──────────
             if shares > 0:
+                bars_held += 1
                 pnl_pct = (price - entry_price) / entry_price
                 if pnl_pct <= -self.stop_loss:
                     revenue = shares * price * (1 - self.transaction_cost)
@@ -68,6 +76,7 @@ class BacktestEngine:
                     })
                     shares = 0
                     entry_price = 0.0
+                    bars_held = 0
                 elif pnl_pct >= self.take_profit:
                     revenue = shares * price * (1 - self.transaction_cost)
                     capital += revenue
@@ -78,6 +87,7 @@ class BacktestEngine:
                     })
                     shares = 0
                     entry_price = 0.0
+                    bars_held = 0
 
             # ── Buy signal — high confidence only ────────────────────
             if pred == 1 and shares == 0 and prob_up >= self.confidence_threshold:
@@ -89,14 +99,15 @@ class BacktestEngine:
                 cost = shares * price * (1 + self.transaction_cost)
                 capital -= cost
                 entry_price = price
+                bars_held = 0
                 trade_log.append({
                     'date': date, 'action': 'BUY', 'price': price,
                     'shares': shares, 'capital': capital,
                     'confidence': prob_up, 'investment': investment,
                 })
 
-            # ── Sell signal (model says down) ────────────────────────
-            elif pred == 0 and shares > 0:
+            # ── Sell signal (model says down AND min hold met) ───────
+            elif pred == 0 and shares > 0 and bars_held >= min_hold:
                 revenue = shares * price * (1 - self.transaction_cost)
                 capital += revenue
                 trade_log.append({
@@ -106,6 +117,7 @@ class BacktestEngine:
                 })
                 shares = 0
                 entry_price = 0.0
+                bars_held = 0
 
             portfolio_value = capital + shares * price
             portfolio_values.append({
@@ -120,8 +132,8 @@ class BacktestEngine:
     # ── Performance metrics ──────────────────────────────────────────
 
     @staticmethod
-    def calc_sharpe(returns, periods=BARS_PER_YEAR):
-        """Annualised Sharpe ratio from bar-level returns."""
+    def calc_sharpe(returns, periods=252):
+        """Annualised Sharpe ratio from bar-level returns (default: daily)."""
         if returns.std() == 0:
             return 0
         return np.sqrt(periods) * returns.mean() / returns.std()
