@@ -48,12 +48,12 @@ class Predictor:
         # Check for missing feature columns
         missing = [c for c in self.feature_cols if c not in df.columns]
         if missing:
-            print(f"⚠ Missing features: {missing}")
+            print(f"WARNING Missing features: {missing}")
             return df
 
         X = df[self.feature_cols].dropna()
         if X.empty:
-            print("⚠ No valid rows after feature computation")
+            print("WARNING No valid rows after feature computation")
             return df
 
         df = df.loc[X.index].copy()

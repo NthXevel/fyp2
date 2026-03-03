@@ -69,9 +69,10 @@ class ModelTrainer:
     # ── Optuna objective ─────────────────────────────────────────────
     def _objective(self, trial: optuna.Trial, X, y) -> float:
         """Single Optuna trial: train with sampled params, score via walk-forward CV."""
-        # Fix #4 — balance classes so the model doesn't blindly predict "up"
-        pos_count = int((y == 1).sum())
-        neg_count = int((y == 0).sum())
+        
+        # Calculate class weight to fix Bull Market Bias
+        pos_count = (y == 1).sum()
+        neg_count = (y == 0).sum()
         scale_weight = neg_count / pos_count if pos_count > 0 else 1.0
 
         params = {
@@ -84,7 +85,7 @@ class ModelTrainer:
             "gamma":             trial.suggest_float("gamma", 0.0, 0.5),
             "reg_alpha":         trial.suggest_float("reg_alpha", 1e-4, 1.0, log=True),
             "reg_lambda":        trial.suggest_float("reg_lambda", 1e-4, 1.0, log=True),
-            "scale_pos_weight":  scale_weight,
+            "scale_pos_weight":  scale_weight, # <--- ADD THIS HERE
             "objective":         "binary:logistic",
             "eval_metric":       "auc",
             "random_state":      RANDOM_STATE,
@@ -146,8 +147,8 @@ class ModelTrainer:
 
         print(f"Training set size: {len(X_train)}")
         print(f"Test set size:     {len(X_test)}")
-        print(f"Target → Accuracy ≥ {TARGET_ACCURACY:.0%}, "
-              f"Sharpe ≥ {TARGET_SHARPE}, Max DD ≤ {TARGET_MAX_DRAWDOWN:.0%}")
+        print(f"Target -> Accuracy >= {TARGET_ACCURACY:.0%}, "
+              f"Sharpe >= {TARGET_SHARPE}, Max DD <= {TARGET_MAX_DRAWDOWN:.0%}")
 
         # ── Optuna hyperparameter search on training data only ─────
         best_params = self.tune(X_train, y_train, n_trials=n_tune_trials)
@@ -177,7 +178,7 @@ class ModelTrainer:
         auc      = roc_auc_score(y_test, y_prob)
         f1       = f1_score(y_test, y_pred)
 
-        acc_status = "✓ MET" if accuracy >= TARGET_ACCURACY else "✗ MISSED"
+        acc_status = "MET" if accuracy >= TARGET_ACCURACY else "MISSED"
         print(f"\nTest Accuracy: {accuracy:.4f}  ({acc_status} target {TARGET_ACCURACY})")
         print(f"Test AUC:      {auc:.4f}")
         print(f"Test F1:       {f1:.4f}")

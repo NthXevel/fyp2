@@ -114,10 +114,10 @@ def main():
         df = load_symbol_data(sym, interval, days, args.source)
         if df is not None and not df.empty:
             print(f"    {sym}: {len(df)} bars  "
-                  f"({df.index[0]} → {df.index[-1]})")
+                  f"({df.index[0]} -> {df.index[-1]})")
             dataframes[sym] = df
         else:
-            print(f"    {sym}: ⚠ no data — skipping")
+            print(f"    {sym}: WARNING no data - skipping")
 
     if not dataframes:
         print("No data fetched for any symbol. Exiting.")
@@ -154,9 +154,9 @@ def main():
         print(f"  {i}. {feature}: {score:.4f}")
 
     print("\n" + "=" * 60)
-    status = "✓ MET" if accuracy >= TARGET_ACCURACY else "✗ MISSED"
+    status = "MET" if accuracy >= TARGET_ACCURACY else "MISSED"
     print(f"Training complete!  Accuracy: {accuracy:.4f}  "
-          f"({status} target ≥ {TARGET_ACCURACY})")
+          f"({status} target >= {TARGET_ACCURACY})")
     print(f"Symbols used: {', '.join(dataframes.keys())}")
     print("=" * 60)
 

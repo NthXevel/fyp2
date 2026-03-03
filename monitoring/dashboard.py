@@ -7,11 +7,20 @@ sys.path.insert(0, ".")
 
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime
+from pathlib import Path
 
-from config.settings import STOCK_SYMBOL
+from config.settings import (
+    STOCK_SYMBOL, CONFIDENCE_THRESHOLD,
+    STOP_LOSS_PCT, TAKE_PROFIT_PCT,
+    TARGET_ACCURACY, TARGET_SHARPE, TARGET_MAX_DRAWDOWN,
+    MODEL_PATH,
+)
 from execution.alpaca_executor import TradingExecutor
+from monitoring.bot_manager import is_running, start, stop, get_log
 
 st.set_page_config(page_title="Quant Bot Dashboard", layout="wide", page_icon="📈")
 
@@ -21,9 +30,89 @@ def get_executor():
     return TradingExecutor()
 
 
+def _load_model_signal():
+    """
+    Load the trained model, fetch recent data, compute features,
+    and return the latest prediction signal + feature values.
+    Returns None on any failure.
+    """
+    try:
+        from models.trainer import ModelTrainer
+        from utils.data_fetcher import DataFetcher
+        from strategies.feature_engineering import FeatureEngineer
+        from strategies.signal_generator import SignalGenerator
+
+        trainer = ModelTrainer()
+        if not trainer.load():
+            return None
+
+        fetcher = DataFetcher()
+        engineer = FeatureEngineer()
+        signal_gen = SignalGenerator()
+
+        # Fetch enough bars for indicator warm-up
+        df = fetcher.get_historical_data(days=59)
+        if df is None or df.empty:
+            return None
+
+        df_feat = engineer.create_features(df)
+        feature_cols = trainer.feature_cols
+        if feature_cols is None:
+            return None
+
+        # Latest row of features
+        latest = df_feat[feature_cols].dropna().iloc[-1:]
+        if latest.empty:
+            return None
+
+        # Prediction
+        probabilities = trainer.predict(latest)  # [[prob_down, prob_up]]
+        action, confidence = signal_gen.decide_trade(probabilities)
+
+        prob_up = float(probabilities[0][1])
+        prob_down = float(probabilities[0][0])
+
+        # Feature values for display
+        feat_vals = latest.iloc[0].to_dict()
+
+        # Recent close prices for sparkline
+        recent_close = df_feat['close'].dropna().tail(60).tolist()
+
+        # Latest price
+        last_price = float(df_feat['close'].dropna().iloc[-1])
+
+        return {
+            'action': action,
+            'confidence': confidence,
+            'prob_up': prob_up,
+            'prob_down': prob_down,
+            'features': feat_vals,
+            'feature_cols': feature_cols,
+            'last_price': last_price,
+            'recent_close': recent_close,
+            'timestamp': str(df_feat.index[-1]),
+        }
+    except Exception as e:
+        st.error(f"Error computing signal: {e}")
+        return None
+
+
+def _load_trade_log():
+    """Load the live trade log CSV if it exists."""
+    log_path = Path("reports/live_trade_log.csv")
+    if log_path.exists():
+        try:
+            df = pd.read_csv(log_path)
+            if not df.empty:
+                return df
+        except Exception:
+            pass
+    return None
+
+
 def main():
     st.title("📈 XGBoost Quant Bot — Live Dashboard")
-    st.caption(f"Last refreshed: {datetime.now().strftime('%H:%M:%S')}")
+    st.caption(f"Last refreshed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     executor = get_executor()
 
@@ -37,6 +126,98 @@ def main():
         col4.metric("Equity",         f"${account['equity']:,.2f}")
     else:
         st.error("Unable to fetch account information.")
+
+    st.divider()
+
+    # ══════════════════════════════════════════════════════════════════
+    # ── Live Model Signal  ────────────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════════
+    st.subheader(f"🤖 Live Signal — {STOCK_SYMBOL}")
+
+    signal_data = _load_model_signal()
+
+    if signal_data:
+        action = signal_data['action']
+        confidence = signal_data['confidence']
+        prob_up = signal_data['prob_up']
+        prob_down = signal_data['prob_down']
+        last_price = signal_data['last_price']
+
+        # Action badge colour
+        action_colours = {'buy': '🟢', 'sell': '🔴', 'hold': '🟡'}
+        badge = action_colours.get(action, '⚪')
+
+        # Top-level signal metrics
+        sig1, sig2, sig3, sig4 = st.columns(4)
+        sig1.metric("Current Signal", f"{badge} {action.upper()}")
+        sig2.metric("Confidence", f"{confidence:.2%}")
+        sig3.metric("Last Price", f"${last_price:,.2f}")
+        sig4.metric("Data as of", signal_data['timestamp'][:19])
+
+        # Probability gauge
+        col_prob, col_chart = st.columns([1, 2])
+
+        with col_prob:
+            st.markdown("**Probability Breakdown**")
+            st.progress(prob_up, text=f"Prob Up: {prob_up:.2%}")
+            st.progress(prob_down, text=f"Prob Down: {prob_down:.2%}")
+
+            st.markdown(f"**Confidence Threshold:** {CONFIDENCE_THRESHOLD:.0%}")
+            if prob_up >= CONFIDENCE_THRESHOLD:
+                st.success(f"Above threshold -> BUY signal")
+            elif prob_down >= CONFIDENCE_THRESHOLD:
+                st.error(f"Below threshold -> SELL signal")
+            else:
+                st.warning(f"Within threshold -> HOLD")
+
+        with col_chart:
+            # Recent price sparkline
+            if signal_data['recent_close']:
+                fig_price = go.Figure()
+                fig_price.add_trace(go.Scatter(
+                    y=signal_data['recent_close'],
+                    mode='lines',
+                    line=dict(color='#1f77b4', width=2),
+                    fill='tozeroy',
+                    fillcolor='rgba(31,119,180,0.1)',
+                ))
+                fig_price.update_layout(
+                    title=f"{STOCK_SYMBOL} Recent Price (last 60 bars)",
+                    height=250, margin=dict(l=0, r=0, t=30, b=0),
+                    xaxis=dict(showticklabels=False),
+                    yaxis=dict(title="Price ($)"),
+                )
+                st.plotly_chart(fig_price, use_container_width=True)
+
+        # Feature values table
+        with st.expander("📊 Current Feature Values", expanded=False):
+            feat_df = pd.DataFrame(
+                list(signal_data['features'].items()),
+                columns=['Feature', 'Value']
+            )
+            feat_df['Value'] = feat_df['Value'].apply(lambda v: f"{v:.6f}")
+            st.dataframe(feat_df, use_container_width=True, hide_index=True)
+
+        # Risk management info
+        with st.expander("⚙️ Risk / Model Settings", expanded=False):
+            r1, r2, r3 = st.columns(3)
+            r1.metric("Stop-Loss", f"{STOP_LOSS_PCT:.1%}")
+            r2.metric("Take-Profit", f"{TAKE_PROFIT_PCT:.1%}")
+            r3.metric("Conf. Threshold", f"{CONFIDENCE_THRESHOLD:.0%}")
+
+            t1, t2, t3 = st.columns(3)
+            t1.metric("Target Accuracy", f"{TARGET_ACCURACY:.0%}")
+            t2.metric("Target Sharpe", f"{TARGET_SHARPE}")
+            t3.metric("Target Max DD", f"{TARGET_MAX_DRAWDOWN:.0%}")
+
+            model_exists = Path(MODEL_PATH).exists()
+            st.markdown(f"**Model file:** `{MODEL_PATH}` — "
+                        f"{'found' if model_exists else 'NOT FOUND'}")
+    else:
+        st.warning(
+            "Could not compute live signal. Make sure the model is trained "
+            "(`python scripts/train.py`) and market data is available."
+        )
 
     st.divider()
 
@@ -67,6 +248,28 @@ def main():
             st.info("No open positions.")
     except Exception as e:
         st.error(f"Error fetching positions: {e}")
+
+    st.divider()
+
+    # ── Trade Log ─────────────────────────────────────────────────────
+    st.subheader("📒 Trade Log")
+    trade_log = _load_trade_log()
+    if trade_log is not None and not trade_log.empty:
+        # Show summary stats
+        n_buys = (trade_log['action'] == 'BUY').sum()
+        n_sells = trade_log['action'].str.startswith('SELL').sum()
+        tl1, tl2, tl3 = st.columns(3)
+        tl1.metric("Total Trades", len(trade_log))
+        tl2.metric("Buys", int(n_buys))
+        tl3.metric("Sells", int(n_sells))
+
+        # Table (most recent first)
+        st.dataframe(
+            trade_log.sort_index(ascending=False),
+            use_container_width=True, hide_index=True,
+        )
+    else:
+        st.info("No trades logged yet.")
 
     st.divider()
 
@@ -103,6 +306,40 @@ def main():
             st.info("No recent orders found.")
     except Exception as e:
         st.error(f"Error fetching order history: {e}")
+
+    # ── Trading Bot Control ──────────────────────────────────────────
+    st.divider()
+    st.subheader("🤖 Trading Bot")
+
+    bot_running = is_running()
+    status_text = "🟢 Running" if bot_running else "🔴 Stopped"
+    st.markdown(f"**Status:** {status_text}")
+
+    col_start, col_stop = st.columns(2)
+    with col_start:
+        if st.button("▶️ Start Bot", disabled=bot_running, type="primary"):
+            ok, msg = start()
+            if ok:
+                st.success(msg)
+            else:
+                st.warning(msg)
+            st.rerun()
+    with col_stop:
+        if st.button("⏹️ Stop Bot", disabled=not bot_running, type="secondary"):
+            ok, msg = stop()
+            if ok:
+                st.success(msg)
+            else:
+                st.warning(msg)
+            st.rerun()
+
+    # Show bot log output
+    with st.expander("📄 Bot Log (last 80 lines)", expanded=bot_running):
+        log_text = get_log(tail=80)
+        if log_text:
+            st.code(log_text, language="text")
+        else:
+            st.info("No log output yet.")
 
     # ── Controls ───────────────────────────────────────────────────────
     st.divider()

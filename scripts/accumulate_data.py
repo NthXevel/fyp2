@@ -72,7 +72,7 @@ def accumulate(symbol: str, interval: str, days: int):
         new_rows = len(combined)
 
     combined.to_csv(csv_path)
-    print(f"  [{symbol}] {new_rows} new rows appended → {csv_path}  "
+    print(f"  [{symbol}] {new_rows} new rows appended -> {csv_path}  "
           f"(total: {len(combined)} rows)")
 
 

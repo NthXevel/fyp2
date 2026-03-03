@@ -48,8 +48,8 @@ class TradingBot:
             sys.exit(1)
 
         print(f"Trading Bot initialized for {STOCK_SYMBOL}")
-        print(f"Targets: Acc ≥ {TARGET_ACCURACY:.0%}  |  "
-              f"Sharpe ≥ {TARGET_SHARPE}  |  Max DD ≤ {TARGET_MAX_DRAWDOWN:.0%}")
+        print(f"Targets: Acc >= {TARGET_ACCURACY:.0%}  |  "
+              f"Sharpe >= {TARGET_SHARPE}  |  Max DD <= {TARGET_MAX_DRAWDOWN:.0%}")
         print(f"Confidence threshold: {CONFIDENCE_THRESHOLD}")
         print(f"Stop-loss: {STOP_LOSS_PCT:.1%}  |  Take-profit: {TAKE_PROFIT_PCT:.1%}")
 
@@ -96,7 +96,7 @@ class TradingBot:
                     confidence, current_price, fractional=self._is_crypto
                 )
 
-                print(f"Confidence: {confidence:.2%} → Investment: ${investment:.2f} → Qty: {qty} shares")
+                print(f"Confidence: {confidence:.2%} -> Investment: ${investment:.2f} -> Qty: {qty} shares")
 
                 if qty > 0 and float(account['buying_power']) > qty * current_price:
                     self.executor.place_buy_order(qty)

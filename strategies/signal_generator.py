@@ -93,10 +93,10 @@ class SignalGenerator:
         change = (current_price - entry_price) / entry_price
 
         if change <= -self.stop_loss_pct:
-            print(f"⚠ STOP-LOSS triggered ({change:.2%} vs -{self.stop_loss_pct:.1%}) [per-order]")
+            print(f"STOP-LOSS triggered ({change:.2%} vs -{self.stop_loss_pct:.1%}) [per-order]")
             return 'sell'
         if change >= self.take_profit_pct:
-            print(f"✓ TAKE-PROFIT triggered ({change:.2%} vs +{self.take_profit_pct:.1%}) [per-order]")
+            print(f"TAKE-PROFIT triggered ({change:.2%} vs +{self.take_profit_pct:.1%}) [per-order]")
             return 'sell'
 
         return None

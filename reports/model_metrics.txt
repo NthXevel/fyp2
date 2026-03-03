@@ -1,11 +1,11 @@
-Model Performance Summary - AAPL (1d)
+Model Performance Summary - BTC/USD (1d)
 ==================================================
 
 Training Pipeline:      Optuna + WalkForwardCV (matching scripts/train.py)
-Training Symbols:       AAPL, MSFT, GOOGL, AMZN, META
+Training Symbols:       AAPL, MSFT, GOOGL, AMZN, META, BTC/USD
 Data Interval:          1d
 History Days:           730
-Features (8):  ['Return', 'EMA_10', 'EMA_20', 'RSI_14', 'MACD_Hist', 'Volatility_14', 'Return_Lag_1', 'Return_Lag_3']
+Features (8):  ['Return', 'EMA_10', 'EMA_20', 'Volatility_14', 'Return_Lag_1', 'Return_Lag_3', 'RSI_14', 'MACD_Hist']
 Optuna Trials:          100
 CV Metric:              AUC
 Position Sizing:        Confidence-based ($200 – $2000)
@@ -13,21 +13,21 @@ Confidence Threshold:   0.55
 Stop-Loss:              20.0% (per order value)
 Take-Profit:            20.0% (per order value)
 Initial Capital:        $100,000.00
-Final Capital:          $99,892.15
-Cumulative Return:      -0.11%
+Final Capital:          $100,000.00
+Cumulative Return:      0.00%
 
-Best CV AUC:            0.5331
-Baseline Test Accuracy: 0.5082
-Baseline Test AUC:      0.4879
-Final Test Accuracy:    0.4897
-Final Test AUC:         0.4841
-Final Test F1:          0.5099
+Best CV AUC:            0.5199
+Baseline Test Accuracy: 0.5301
+Baseline Test AUC:      0.5063
+Final Test Accuracy:    0.5431
+Final Test AUC:         0.5068
+Final Test F1:          0.4230
 
 --- Target Metrics ---
-Accuracy:   0.4897  (target >= 0.55)  [MISSED]
-Sharpe:     -10.943   (target >= 0.5)   [MISSED]
-Max DD:     -0.18%  (target <= 10%)   [MET]
+Accuracy:   0.5431  (target >= 0.55)  [MISSED]
+Sharpe:     0.000   (target >= 0.5)   [MISSED]
+Max DD:     0.00%  (target <= 10%)   [MET]
 
-Win Rate:               55.56%
-Number of Trades:       38
-Best Params:            {'n_estimators': 457, 'max_depth': 5, 'learning_rate': 0.22467014317981734, 'subsample': 0.7790680066942367, 'colsample_bytree': 0.5002576541578742, 'min_child_weight': 2, 'gamma': 0.1167110404559244, 'reg_alpha': 0.6862764056783632, 'reg_lambda': 0.06641765332512464, 'objective': 'binary:logistic', 'eval_metric': 'auc', 'random_state': 42, 'verbosity': 0}
+Win Rate:               0.00%
+Number of Trades:       42
+Best Params:            {'n_estimators': 148, 'max_depth': 4, 'learning_rate': 0.03132230091724141, 'subsample': 0.9755567082208578, 'colsample_bytree': 0.5623289506948053, 'min_child_weight': 7, 'gamma': 0.2261603977264583, 'reg_alpha': 0.00022787790165856828, 'reg_lambda': 0.013793059854270531, 'objective': 'binary:logistic', 'eval_metric': 'auc', 'random_state': 42, 'verbosity': 0}

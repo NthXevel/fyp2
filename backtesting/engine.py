@@ -175,15 +175,15 @@ class BacktestEngine:
             win_rate = wins / paired
 
         def check(val, target, higher_better=True):
-            return '✓' if (val >= target if higher_better else val <= target) else '✗'
+            return '[Y]' if (val >= target if higher_better else val <= target) else '[X]'
 
         print(f"Initial capital:   ${self.initial_capital:,.2f}")
         print(f"Final capital:     ${final_capital:,.2f}")
         print(f"Cumulative return: {cum_return:.2%}")
         print()
-        print(f"  Accuracy:    {test_accuracy:.4f}   {check(test_accuracy, TARGET_ACCURACY)} target ≥ {TARGET_ACCURACY}")
-        print(f"  Sharpe:      {sharpe:.3f}    {check(sharpe, TARGET_SHARPE)} target ≥ {TARGET_SHARPE}")
-        print(f"  Max DD:      {max_dd:.2%}   {check(abs(max_dd), TARGET_MAX_DRAWDOWN, higher_better=False)} target ≤ {TARGET_MAX_DRAWDOWN:.0%}")
+        print(f"  Accuracy:    {test_accuracy:.4f}   {check(test_accuracy, TARGET_ACCURACY)} target >= {TARGET_ACCURACY}")
+        print(f"  Sharpe:      {sharpe:.3f}    {check(sharpe, TARGET_SHARPE)} target >= {TARGET_SHARPE}")
+        print(f"  Max DD:      {max_dd:.2%}   {check(abs(max_dd), TARGET_MAX_DRAWDOWN, higher_better=False)} target <= {TARGET_MAX_DRAWDOWN:.0%}")
         print(f"  Win rate:    {win_rate:.2%}")
         print(f"  Trades:      {num_trades}  (buys: {num_buys}, sells: {num_sells})")
 
