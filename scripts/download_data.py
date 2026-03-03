@@ -5,7 +5,7 @@ Uses Yahoo Finance as data source.
 Usage:
     python -m scripts.download_data                                    # Download TRAINING_SYMBOLS, daily, 2yr
     python -m scripts.download_data --symbol TSLA                      # Single symbol
-    python -m scripts.download_data --symbols AAPL TSLA MSFT           # Multiple symbols
+    python -m scripts.download_data --symbols BTC/USD ETH/USD     # Multiple symbols
     python -m scripts.download_data --days 730 --interval 1d           # 2 years daily
 """
 
@@ -21,6 +21,7 @@ import pandas as pd
 import yfinance as yf
 from config.settings import (
     STOCK_SYMBOL, TRAINING_SYMBOLS, TRAINING_INTERVAL, TRAINING_DAYS,
+    TRAINING_INTERVALS, TRAINING_DAYS_15M,
     yahoo_symbol, safe_filename,
 )
 
@@ -105,12 +106,12 @@ def main():
                        help="Single ticker symbol to download")
     group.add_argument("--symbols", nargs="+", type=str, default=None,
                        help="Multiple ticker symbols to download")
-    parser.add_argument("--days", type=int, default=TRAINING_DAYS,
-                        help=f"Days of history (default: {TRAINING_DAYS})")
-    parser.add_argument("--interval", type=str, default=TRAINING_INTERVAL,
+    parser.add_argument("--days", type=int, default=None,
+                        help=f"Days of history (default: auto per interval)")
+    parser.add_argument("--interval", type=str, default=None,
                         choices=["1m", "2m", "5m", "15m", "30m", "60m", "90m",
                                  "1h", "1d", "5d", "1wk", "1mo", "3mo"],
-                        help=f"Data interval (default: {TRAINING_INTERVAL})")
+                        help="Data interval (default: download all TRAINING_INTERVALS)")
     args = parser.parse_args()
 
     # Resolve symbol list
@@ -121,21 +122,36 @@ def main():
     else:
         symbols = [s.upper() for s in TRAINING_SYMBOLS]
 
+    # Resolve intervals to download
+    if args.interval:
+        intervals = [args.interval]
+    else:
+        intervals = TRAINING_INTERVALS          # e.g. ['1d', '15m']
+
     print(f"\n{'=' * 50}")
     print(f"Stock Data Downloader  (YAHOO)")
-    print(f"Symbols : {', '.join(symbols)}")
-    print(f"Days    : {args.days}")
-    print(f"Interval: {args.interval}")
+    print(f"Symbols   : {', '.join(symbols)}")
+    print(f"Intervals : {', '.join(intervals)}")
     print(f"{'=' * 50}\n")
 
     saved_files = []
-    for symbol in symbols:
-        df = download_stock_data(symbol, days=args.days, interval=args.interval)
+    for interval in intervals:
+        # Choose appropriate lookback per interval
+        if args.days:
+            days = args.days
+        elif interval == '15m':
+            days = TRAINING_DAYS_15M
+        else:
+            days = TRAINING_DAYS
 
-        if df is not None:
-            path = save_to_csv(df, symbol, args.interval)
-            saved_files.append(path)
-        print()
+        print(f"--- interval={interval}  days={days} ---")
+        for symbol in symbols:
+            df = download_stock_data(symbol, days=days, interval=interval)
+
+            if df is not None:
+                path = save_to_csv(df, symbol, interval)
+                saved_files.append(path)
+            print()
 
     # Summary
     print(f"{'=' * 50}")

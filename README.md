@@ -1,4 +1,4 @@
-# Quantitative Trading Bot - Apple Stock (AAPL)
+# Quantitative Trading Bot - Crypto (BTC/USD & ETH/USD)
 
 A Python-based quantitative trading system using XGBoost machine learning model, Alpaca for trade execution, and Yahoo Finance for real-time market data.
 
@@ -10,7 +10,10 @@ fyp2/
 │   ├── __init__.py
 │   └── settings.py                 # Environment variables & hyperparameters
 ├── data/                           # Raw & processed market data
-│   └── AAPL_15m.csv
+│   ├── BTCUSD_1d.csv
+│   ├── BTCUSD_15m.csv
+│   ├── ETHUSD_1d.csv
+│   └── ETHUSD_15m.csv
 ├── models/                         # Trained XGBoost models
 │   ├── __init__.py
 │   ├── trainer.py                  # XGBoost training & evaluation
@@ -83,8 +86,8 @@ ALPACA_SECRET_KEY=your_secret
 
 ```bash
 python -m scripts.download_data
-python -m scripts.download_data --symbol TSLA
-python -m scripts.download_data --symbols AAPL TSLA MSFT
+python -m scripts.download_data --symbol BTC/USD
+python -m scripts.download_data --symbols BTC/USD ETH/USD
 ```
 
 ### Train the Model
@@ -94,7 +97,7 @@ python -m scripts.train
 ```
 
 This script will:
-- Fetch historical Apple stock data (or load from local CSV)
+- Fetch historical crypto data (or load from local CSV)
 - Engineer 8 technical indicator features
 - Train XGBoost classifier with time-series CV hyperparameter search
 - Display model accuracy and feature importance

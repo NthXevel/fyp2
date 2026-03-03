@@ -128,6 +128,7 @@ class ModelTrainer:
     def train(self, X, y, feature_cols, n_tune_trials: int = 50):
         """
         Full pipeline: Optuna tune → train final model → evaluate on holdout.
+        Splits data chronologically using TEST_SIZE.
 
         Args:
             X:              Feature matrix (pd.DataFrame or np.ndarray)
@@ -144,6 +145,26 @@ class ModelTrainer:
         split_idx = int(len(X) * (1 - TEST_SIZE))
         X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
         y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
+
+        return self._run_training(X_train, y_train, X_test, y_test,
+                                  n_tune_trials)
+
+    def train_with_split(self, X_train, y_train, X_test, y_test,
+                         feature_cols, n_tune_trials: int = 50):
+        """
+        Like train(), but caller provides the pre-split train/test data.
+
+        Use this when different datasets serve as training vs. test sets
+        (e.g. all symbols for training, part of BTC/USD 15m for test).
+        """
+        self.feature_cols = feature_cols
+        return self._run_training(X_train, y_train, X_test, y_test,
+                                  n_tune_trials)
+
+    # ── Shared training logic ────────────────────────────────────────
+    def _run_training(self, X_train, y_train, X_test, y_test,
+                      n_tune_trials: int = 50):
+        """Internal: Optuna tune → final train → evaluate."""
 
         print(f"Training set size: {len(X_train)}")
         print(f"Test set size:     {len(X_test)}")

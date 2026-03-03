@@ -25,7 +25,7 @@ class BacktestEngine:
     def __init__(self, initial_capital=100_000, transaction_cost=0.001,
                  min_investment=200, max_investment=2000,
                  stop_loss=STOP_LOSS_PCT, take_profit=TAKE_PROFIT_PCT,
-                 confidence_threshold=0.55):
+                 confidence_threshold=0.5):
         self.initial_capital = initial_capital
         self.transaction_cost = transaction_cost
         self.min_investment = min_investment
@@ -95,7 +95,7 @@ class BacktestEngine:
                 scale = max(0.0, min(1.0, scale))
                 investment = self.min_investment + scale * (self.max_investment - self.min_investment)
                 investment = min(investment, capital)
-                shares = int(investment / (price * (1 + self.transaction_cost)))
+                shares = round(investment / (price * (1 + self.transaction_cost)), 5)
                 cost = shares * price * (1 + self.transaction_cost)
                 capital -= cost
                 entry_price = price
@@ -171,7 +171,7 @@ class BacktestEngine:
             sells = trade_log[trade_log['action'].str.startswith('SELL')].reset_index(drop=True)
             buys = trade_log[trade_log['action'] == 'BUY'].reset_index(drop=True)
             paired = min(len(buys), len(sells))
-            wins = sum(sells.loc[j, 'price'] > buys.loc[j, 'price'] for j in range(paired))
+            wins = sum(sells.loc[j, 'capital'] > buys.loc[j, 'capital'] for j in range(paired))
             win_rate = wins / paired
 
         def check(val, target, higher_better=True):

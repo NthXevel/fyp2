@@ -33,8 +33,9 @@ from models.trainer import ModelTrainer
 from config.settings import (
     STOCK_SYMBOL, DATA_INTERVAL, DATA_DAYS,
     TRAINING_SYMBOLS, TRAINING_INTERVAL, TRAINING_DAYS,
+    TRAINING_INTERVALS, TRAINING_DAYS_15M,
     TARGET_ACCURACY, TARGET_SHARPE, TARGET_MAX_DRAWDOWN,
-    safe_filename,
+    TEST_SIZE, safe_filename,
 )
 
 
@@ -76,19 +77,17 @@ def main():
                         help="Train on STOCK_SYMBOL only (no multi-stock)")
     parser.add_argument("--symbols", nargs="+", default=None,
                         help="Override TRAINING_SYMBOLS list")
-    parser.add_argument("--interval", default=None,
-                        help="Bar interval (default: TRAINING_INTERVAL from .env)")
-    parser.add_argument("--days", type=int, default=None,
-                        help="Days of history (default: TRAINING_DAYS from .env)")
     parser.add_argument("--source", default="yahoo",
                         choices=["yahoo", "alpaca"],
                         help="Data source (default: yahoo)")
     parser.add_argument("--trials", type=int, default=50,
                         help="Number of Optuna trials (default: 50)")
+    parser.add_argument("--test-ratio", type=float, default=TEST_SIZE,
+                        help="Fraction of BTC/USD 15m held for test (default: 0.2)")
     args = parser.parse_args()
 
-    interval = args.interval or TRAINING_INTERVAL
-    days     = args.days     or TRAINING_DAYS
+    interval = '15m'                          # 15-minute bars only
+    days     = TRAINING_DAYS_15M              # ~59 days (Yahoo max)
 
     if args.single:
         symbols = [STOCK_SYMBOL]
@@ -97,18 +96,22 @@ def main():
     else:
         symbols = TRAINING_SYMBOLS
 
+    # The dataset whose tail is held out for testing
+    TEST_SYMBOL = 'BTC/USD'
+
     mode = "single-stock" if len(symbols) == 1 else "multi-stock"
 
     print("=" * 60)
-    print(f"Training XGBoost Model ({mode})")
-    print(f"Symbols  : {', '.join(symbols)}")
-    print(f"Interval : {interval}  |  History: {days} days")
-    print(f"Source   : {args.source.upper()}")
-    print(f"Optuna   : {args.trials} trials")
+    print(f"Training XGBoost Model ({mode}, 15m only)")
+    print(f"Symbols   : {', '.join(symbols)}")
+    print(f"Interval  : {interval}  |  History: {days} days")
+    print(f"Source    : {args.source.upper()}")
+    print(f"Optuna    : {args.trials} trials")
+    print(f"Test set  : last {args.test_ratio:.0%} of {TEST_SYMBOL} 15m")
     print("=" * 60)
 
-    # ── Step 1: Fetch data for each symbol ──────────────────────────
-    print(f"\n[1/4] Fetching historical data for {len(symbols)} symbol(s) ...")
+    # ── Step 1: Fetch 15m data for every symbol ─────────────────────
+    print(f"\n[1/5] Fetching 15m data for {len(symbols)} symbol(s) ...")
     dataframes: dict[str, pd.DataFrame] = {}
     for sym in symbols:
         df = load_symbol_data(sym, interval, days, args.source)
@@ -117,34 +120,85 @@ def main():
                   f"({df.index[0]} -> {df.index[-1]})")
             dataframes[sym] = df
         else:
-            print(f"    {sym}: WARNING no data - skipping")
+            print(f"    {sym}: WARNING no data – skipping")
 
     if not dataframes:
         print("No data fetched for any symbol. Exiting.")
         sys.exit(1)
 
-    # ── Step 2: Engineer features ───────────────────────────────────
-    print(f"\n[2/4] Engineering features ...")
+    # ── Step 2: Engineer features per symbol ────────────────────────
+    print(f"\n[2/5] Engineering features ...")
     engineer = FeatureEngineer()
+    featured: dict[str, pd.DataFrame] = {}
+    for sym, df in dataframes.items():
+        feat_df = engineer.create_features(df, symbol=sym)
+        feat_df = feat_df.dropna(subset=engineer.feature_cols + ['Target'])
+        featured[sym] = feat_df
+        print(f"    {sym}: {len(feat_df)} usable rows")
 
-    if len(dataframes) == 1:
-        sym = list(dataframes.keys())[0]
-        df = engineer.create_features(dataframes[sym], symbol=sym)
-        X, y, feature_cols = engineer.prepare_training_data(df)
+    # ── Step 3: Split — hold out last 20% of BTC/USD for test ──────
+    print(f"\n[3/5] Splitting data ...")
+    feature_cols = engineer.feature_cols
+    train_frames = []
+
+    if TEST_SYMBOL in featured:
+        test_df   = featured[TEST_SYMBOL]
+        split_idx = int(len(test_df) * (1 - args.test_ratio))
+        train_part = test_df.iloc[:split_idx]
+        holdout    = test_df.iloc[split_idx:]
+        train_frames.append(train_part)
+        print(f"  {TEST_SYMBOL}: {len(train_part)} rows -> train, "
+              f"{len(holdout)} rows -> test")
     else:
-        X, y, feature_cols = engineer.prepare_multi_stock(dataframes)
+        holdout = None
+        print(f"  WARNING: {TEST_SYMBOL} not found — no dedicated test set")
 
-    print(f"  Features       : {len(feature_cols)}")
-    print(f"  Training rows  : {len(X)}")
-    print(f"  Target balance : {y.value_counts().to_dict()}")
+    # Everything else goes entirely into training
+    for sym, df in featured.items():
+        if sym != TEST_SYMBOL:
+            train_frames.append(df)
+            print(f"  {sym}: {len(df)} rows -> train (100%)")
 
-    # ── Step 3: Train model ─────────────────────────────────────────
-    print(f"\n[3/4] Training XGBoost model (Optuna, {args.trials} trials) ...")
+    # Normalise tz-aware / tz-naive indices before concat
+    for i, f in enumerate(train_frames):
+        if getattr(f.index, 'tz', None) is not None:
+            train_frames[i] = f.copy()
+            train_frames[i].index = f.index.tz_localize(None)
+    if holdout is not None and getattr(holdout.index, 'tz', None) is not None:
+        holdout = holdout.copy()
+        holdout.index = holdout.index.tz_localize(None)
+
+    combined_train = pd.concat(train_frames).sort_index()
+    X_train = combined_train[feature_cols]
+    y_train = combined_train['Target']
+
+    if holdout is not None:
+        X_test = holdout[feature_cols]
+        y_test = holdout['Target']
+    else:
+        # Fallback: chronological split on combined data
+        n = int(len(X_train) * (1 - args.test_ratio))
+        X_test  = X_train.iloc[n:]
+        y_test  = y_train.iloc[n:]
+        X_train = X_train.iloc[:n]
+        y_train = y_train.iloc[:n]
+
+    print(f"\n  Total training rows : {len(X_train)}")
+    print(f"  Total test rows     : {len(X_test)}")
+    print(f"  Features            : {len(feature_cols)}")
+    print(f"  Train target balance: {y_train.value_counts().to_dict()}")
+    print(f"  Test  target balance: {y_test.value_counts().to_dict()}")
+
+    # ── Step 4: Train model ─────────────────────────────────────────
+    print(f"\n[4/5] Training XGBoost model (Optuna, {args.trials} trials) ...")
     trainer = ModelTrainer()
-    accuracy = trainer.train(X, y, feature_cols, n_tune_trials=args.trials)
+    accuracy = trainer.train_with_split(
+        X_train, y_train, X_test, y_test,
+        feature_cols, n_tune_trials=args.trials,
+    )
 
-    # ── Step 4: Save model ──────────────────────────────────────────
-    print("\n[4/4] Saving model ...")
+    # ── Step 5: Save model ──────────────────────────────────────────
+    print("\n[5/5] Saving model ...")
     trainer.save()
 
     # Feature importance

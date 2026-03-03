@@ -29,7 +29,7 @@ FEATURE_COLUMNS = [
     'Return', 'EMA_10', 'EMA_20',
     'Volatility_14', 'Return_Lag_1', 'Return_Lag_3',
     # Momentum (normalised)
-    'RSI_14', 'MACD_Hist',
+    'RSI_14', 'MACD_Hist', 'MACD_Line_Norm',
 ]
 
 
@@ -66,6 +66,8 @@ class FeatureEngineer:
         macd_signal = macd_line.ewm(span=9).mean()
         # Convert MACD to a percentage of price so it scales across years
         df['MACD_Hist'] = (macd_line - macd_signal) / df['close']
+        # "Zero Line" position — normalized by price so it works across assets
+        df['MACD_Line_Norm'] = macd_line / df['close']
 
         # ── Volatility (14-period rolling std of returns) ───────────
         df['Volatility_14'] = df['Return'].rolling(window=14).std()
@@ -79,7 +81,7 @@ class FeatureEngineer:
         # If we only predict a 1-day move, fees eat all our profits.
         # Let's predict if the stock will be up more than 0.5% over the next 3 days.
         future_return = (df['close'].shift(-3) / df['close']) - 1
-        df['Target'] = (future_return > 0.005).astype(int) 
+        df['Target'] = (future_return > 0.008).astype(int) 
         
         return df
     

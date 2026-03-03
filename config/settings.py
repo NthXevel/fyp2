@@ -17,7 +17,7 @@ ALPACA_SECRET_KEY = os.getenv('ALPACA_SECRET_KEY')
 ALPACA_BASE_URL = os.getenv('ALPACA_BASE_URL', 'https://paper-api.alpaca.markets')
 
 # Trading Configuration
-STOCK_SYMBOL = os.getenv('STOCK_SYMBOL', 'AAPL')
+STOCK_SYMBOL = os.getenv('STOCK_SYMBOL', 'BTC/USD')
 INVESTMENT_AMOUNT = float(os.getenv('INVESTMENT_AMOUNT', '1000'))
 MODEL_PATH = os.getenv('MODEL_PATH', 'models/saved/xgboost_model.pkl')
 
@@ -28,20 +28,23 @@ MODEL_PATH = os.getenv('MODEL_PATH', 'models/saved/xgboost_model.pkl')
 # Use slash notation for crypto pairs (e.g. BTC/USD).
 TRAINING_SYMBOLS = [
     s.strip() for s in
-    os.getenv('TRAINING_SYMBOLS', 'AAPL,MSFT,GOOGL,AMZN,META,BTC/USD').split(',')
+    os.getenv('TRAINING_SYMBOLS',
+             'BTC/USD,ETH/USD,SOL/USD,BNB/USD,ADA/USD,XRP/USD').split(',')
 ]
-# Interval & lookback for training data (separate from live-trading interval)
-TRAINING_INTERVAL = os.getenv('TRAINING_INTERVAL', '1d')    # '1d' for years of history
-TRAINING_DAYS = int(os.getenv('TRAINING_DAYS', '730'))       # ~2 years of daily bars
+# Intervals for training data — 15m intraday only
+TRAINING_INTERVALS = [s.strip() for s in os.getenv('TRAINING_INTERVALS', '15m').split(',')]
+TRAINING_INTERVAL  = os.getenv('TRAINING_INTERVAL', '15m')   # default interval
+TRAINING_DAYS      = int(os.getenv('TRAINING_DAYS', '59'))   # Yahoo max ~60 days for 15m
+TRAINING_DAYS_15M  = int(os.getenv('TRAINING_DAYS_15M', '59'))  # Yahoo max ~60 days for 15m
 
 # Confidence-based position sizing
-CONFIDENCE_THRESHOLD = float(os.getenv('CONFIDENCE_THRESHOLD', '0.55'))
+CONFIDENCE_THRESHOLD = float(os.getenv('CONFIDENCE_THRESHOLD', '0.65'))
 MIN_INVESTMENT_AMOUNT = float(os.getenv('MIN_INVESTMENT_AMOUNT', '200'))
 MAX_INVESTMENT_AMOUNT = float(os.getenv('MAX_INVESTMENT_AMOUNT', '20000'))
 
 # Risk management -- per-order stop-loss / take-profit (based on order value)
-STOP_LOSS_PCT = float(os.getenv('STOP_LOSS_PCT', '0.20'))      # 20 % per order
-TAKE_PROFIT_PCT = float(os.getenv('TAKE_PROFIT_PCT', '0.20'))   # 20 % per order
+STOP_LOSS_PCT = float(os.getenv('STOP_LOSS_PCT', '0.02'))     
+TAKE_PROFIT_PCT = float(os.getenv('TAKE_PROFIT_PCT', '0.03'))   
 
 # Data Configuration (live trading interval — kept for run_bot / data_fetcher)
 DATA_INTERVAL = os.getenv('DATA_INTERVAL', '15m')  # 15-minute bars

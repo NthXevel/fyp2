@@ -4,7 +4,7 @@ to grow your local CSV with new 15-minute bars.
 
 Usage:
     python -m scripts.accumulate_data                          # Append for default symbol
-    python -m scripts.accumulate_data --symbols AAPL MSFT      # Multiple symbols
+    python -m scripts.accumulate_data --symbols BTC/USD ETH/USD  # Multiple symbols
     python -m scripts.accumulate_data --interval 1h --days 5    # Custom interval
 """
 import argparse
