@@ -7,7 +7,9 @@ Handles all interactions with the Alpaca brokerage API:
     • Order placement (buy / sell)
     • Order history
 """
-import alpaca_trade_api as tradeapi
+from alpaca.trading.client import TradingClient
+from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest
+from alpaca.trading.enums import OrderSide, TimeInForce, QueryOrderStatus
 from config.settings import (
     ALPACA_API_KEY, ALPACA_SECRET_KEY, ALPACA_BASE_URL,
     STOCK_SYMBOL, STOP_LOSS_PCT, TAKE_PROFIT_PCT,
@@ -17,10 +19,11 @@ from config.settings import (
 
 class TradingExecutor:
     def __init__(self, api_key=ALPACA_API_KEY, secret_key=ALPACA_SECRET_KEY):
-        self.client = tradeapi.REST(
-            key_id=api_key,
+        paper = 'paper' in ALPACA_BASE_URL.lower()
+        self.client = TradingClient(
+            api_key=api_key,
             secret_key=secret_key,
-            base_url=ALPACA_BASE_URL
+            paper=paper,
         )
         self.symbol = alpaca_symbol(STOCK_SYMBOL)
         self._is_crypto = is_crypto(STOCK_SYMBOL)
@@ -52,11 +55,11 @@ class TradingExecutor:
             dict: Position details or None if no position
         """
         try:
-            positions = self.client.list_positions()
+            positions = self.client.get_all_positions()
             for position in positions:
                 if position.symbol == self.symbol:
                     return {
-                        'qty': int(position.qty),
+                        'qty': int(float(position.qty)),
                         'avg_entry_price': float(position.avg_entry_price),
                         'current_price': float(position.current_price),
                         'unrealized_pl': float(position.unrealized_pl),
@@ -79,21 +82,21 @@ class TradingExecutor:
             dict: Order details
         """
         try:
-            tif = 'gtc' if self._is_crypto else 'day'
-            order = self.client.submit_order(
+            tif = TimeInForce.GTC if self._is_crypto else TimeInForce.DAY
+            order_data = MarketOrderRequest(
                 symbol=self.symbol,
-                qty=str(qty),
-                side='buy',
-                type='market',
-                time_in_force=tif
+                qty=qty,
+                side=OrderSide.BUY,
+                time_in_force=tif,
             )
+            order = self.client.submit_order(order_data)
             print(f"Buy order placed: {qty} shares of {self.symbol}")
             return {
-                'order_id': order.id,
+                'order_id': str(order.id),
                 'symbol': order.symbol,
-                'qty': order.qty,
-                'side': order.side,
-                'status': order.status
+                'qty': str(order.qty),
+                'side': str(order.side),
+                'status': str(order.status)
             }
         except Exception as e:
             print(f"Error placing buy order: {e}")
@@ -111,21 +114,21 @@ class TradingExecutor:
             dict: Order details
         """
         try:
-            tif = 'gtc' if self._is_crypto else 'day'
-            order = self.client.submit_order(
+            tif = TimeInForce.GTC if self._is_crypto else TimeInForce.DAY
+            order_data = MarketOrderRequest(
                 symbol=self.symbol,
-                qty=str(qty),
-                side='sell',
-                type='market',
-                time_in_force=tif
+                qty=qty,
+                side=OrderSide.SELL,
+                time_in_force=tif,
             )
+            order = self.client.submit_order(order_data)
             print(f"Sell order placed: {qty} shares of {self.symbol}")
             return {
-                'order_id': order.id,
+                'order_id': str(order.id),
                 'symbol': order.symbol,
-                'qty': order.qty,
-                'side': order.side,
-                'status': order.status
+                'qty': str(order.qty),
+                'side': str(order.side),
+                'status': str(order.status)
             }
         except Exception as e:
             print(f"Error placing sell order: {e}")
@@ -143,10 +146,11 @@ class TradingExecutor:
             list: List of orders
         """
         try:
-            orders = self.client.list_orders(
-                status='all',
-                limit=limit
+            request = GetOrdersRequest(
+                status=QueryOrderStatus.ALL,
+                limit=limit,
             )
+            orders = self.client.get_orders(request)
             results = []
             for order in orders:
                 # Normalise both sides so BTC/USD, BTCUSD, btc/usd all match
@@ -155,14 +159,14 @@ class TradingExecutor:
                     if norm(order.symbol) != norm(symbol_filter):
                         continue
                 results.append({
-                    'order_id': order.id,
+                    'order_id': str(order.id),
                     'symbol': order.symbol,
-                    'qty': order.qty,
-                    'side': order.side,
-                    'filled_qty': order.filled_qty,
-                    'filled_avg_price': order.filled_avg_price,
-                    'status': order.status,
-                    'created_at': order.created_at,
+                    'qty': str(order.qty),
+                    'side': str(order.side),
+                    'filled_qty': str(order.filled_qty),
+                    'filled_avg_price': str(order.filled_avg_price) if order.filled_avg_price else None,
+                    'status': str(order.status),
+                    'created_at': str(order.created_at),
                 })
             return results
         except Exception as e:
@@ -177,7 +181,7 @@ class TradingExecutor:
         open position in the account.
         """
         try:
-            positions = self.client.list_positions()
+            positions = self.client.get_all_positions()
             return {
                 p.symbol: {
                     'qty': float(p.qty),
@@ -196,7 +200,8 @@ class TradingExecutor:
     def get_open_orders(self):
         """Return a list of open Order objects."""
         try:
-            return self.client.list_orders(status='open')
+            request = GetOrdersRequest(status=QueryOrderStatus.OPEN)
+            return self.client.get_orders(request)
         except Exception as e:
             print(f"Error getting open orders: {e}")
             raise
@@ -204,13 +209,13 @@ class TradingExecutor:
     def cancel_all_orders(self):
         """Cancel every open order."""
         try:
-            self.client.cancel_all_orders()
+            self.client.cancel_orders()
         except Exception as e:
             print(f"Error cancelling orders: {e}")
 
     def close_all_positions(self):
         """Close every open position."""
         try:
-            self.client.close_all_positions()
+            self.client.close_all_positions(cancel_orders=True)
         except Exception as e:
             print(f"Error closing positions: {e}")
