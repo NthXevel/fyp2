@@ -22,7 +22,7 @@ from execution.alpaca_executor import TradingExecutor
 from monitoring.logger import TradeLogger
 from config.settings import (
     STOCK_SYMBOL, INVESTMENT_AMOUNT, LOOKBACK_PERIOD, DATA_INTERVAL,
-    CONFIDENCE_THRESHOLD, MIN_INVESTMENT_AMOUNT, MAX_INVESTMENT_AMOUNT,
+    CONFIDENCE_THRESHOLD, MIN_PCT_ALLOCATION, MAX_PCT_ALLOCATION,
     STOP_LOSS_PCT, TAKE_PROFIT_PCT,
     TARGET_ACCURACY, TARGET_SHARPE, TARGET_MAX_DRAWDOWN,
     is_crypto,
@@ -92,8 +92,9 @@ class TradingBot:
             quote = self.fetcher.get_realtime_quote()
             if quote:
                 current_price = quote['c']
+                equity = float(account['equity'])
                 qty, investment = self.signal.calculate_position_size(
-                    confidence, current_price, fractional=self._is_crypto
+                    confidence, current_price, equity, fractional=self._is_crypto
                 )
 
                 print(f"Confidence: {confidence:.2%} -> Investment: ${investment:.2f} -> Qty: {qty} shares")

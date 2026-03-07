@@ -39,8 +39,8 @@ TRAINING_DAYS_15M  = int(os.getenv('TRAINING_DAYS_15M', '59'))  # Yahoo max ~60 
 
 # Confidence-based position sizing
 CONFIDENCE_THRESHOLD = float(os.getenv('CONFIDENCE_THRESHOLD', '0.65'))
-MIN_INVESTMENT_AMOUNT = float(os.getenv('MIN_INVESTMENT_AMOUNT', '200'))
-MAX_INVESTMENT_AMOUNT = float(os.getenv('MAX_INVESTMENT_AMOUNT', '20000'))
+MIN_PCT_ALLOCATION = float(os.getenv('MIN_PCT_ALLOCATION', '0.10'))   # 10% of equity
+MAX_PCT_ALLOCATION = float(os.getenv('MAX_PCT_ALLOCATION', '0.95'))   # 95% of equity (leave 5% buffer)
 
 # Risk management -- per-order stop-loss / take-profit (based on order value)
 STOP_LOSS_PCT = float(os.getenv('STOP_LOSS_PCT', '0.02'))     

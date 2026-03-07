@@ -12,6 +12,7 @@ import pandas as pd
 from config.settings import (
     STOP_LOSS_PCT, TAKE_PROFIT_PCT,
     TARGET_SHARPE, TARGET_MAX_DRAWDOWN, TARGET_ACCURACY,
+    MIN_PCT_ALLOCATION, MAX_PCT_ALLOCATION,
 )
 from strategies.feature_engineering import FORWARD_BARS
 
@@ -23,13 +24,13 @@ class BacktestEngine:
     """Long-only backtest engine with confidence-based sizing and SL/TP."""
 
     def __init__(self, initial_capital=100_000, transaction_cost=0.001,
-                 min_investment=200, max_investment=2000,
+                 min_pct=MIN_PCT_ALLOCATION, max_pct=MAX_PCT_ALLOCATION,
                  stop_loss=STOP_LOSS_PCT, take_profit=TAKE_PROFIT_PCT,
                  confidence_threshold=0.5):
         self.initial_capital = initial_capital
         self.transaction_cost = transaction_cost
-        self.min_investment = min_investment
-        self.max_investment = max_investment
+        self.min_pct = min_pct
+        self.max_pct = max_pct
         self.stop_loss = stop_loss
         self.take_profit = take_profit
         self.confidence_threshold = confidence_threshold
@@ -93,7 +94,10 @@ class BacktestEngine:
             if pred == 1 and shares == 0 and prob_up >= self.confidence_threshold:
                 scale = (prob_up - self.confidence_threshold) / (1.0 - self.confidence_threshold)
                 scale = max(0.0, min(1.0, scale))
-                investment = self.min_investment + scale * (self.max_investment - self.min_investment)
+                # Dynamic dollar limits based on current capital
+                current_min_dollars = capital * self.min_pct
+                current_max_dollars = capital * self.max_pct
+                investment = current_min_dollars + scale * (current_max_dollars - current_min_dollars)
                 investment = min(investment, capital)
                 shares = round(investment / (price * (1 + self.transaction_cost)), 5)
                 cost = shares * price * (1 + self.transaction_cost)

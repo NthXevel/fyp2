@@ -7,7 +7,7 @@ Handles:
     • Per-order stop-loss and take-profit risk management
 """
 from config.settings import (
-    CONFIDENCE_THRESHOLD, MIN_INVESTMENT_AMOUNT, MAX_INVESTMENT_AMOUNT,
+    CONFIDENCE_THRESHOLD, MIN_PCT_ALLOCATION, MAX_PCT_ALLOCATION,
     STOP_LOSS_PCT, TAKE_PROFIT_PCT,
 )
 
@@ -16,13 +16,13 @@ class SignalGenerator:
     """Generate trading signals and manage position sizing / risk."""
 
     def __init__(self, confidence_threshold=CONFIDENCE_THRESHOLD,
-                 min_investment=MIN_INVESTMENT_AMOUNT,
-                 max_investment=MAX_INVESTMENT_AMOUNT,
+                 min_pct=MIN_PCT_ALLOCATION,
+                 max_pct=MAX_PCT_ALLOCATION,
                  stop_loss_pct=STOP_LOSS_PCT,
                  take_profit_pct=TAKE_PROFIT_PCT):
         self.confidence_threshold = confidence_threshold
-        self.min_investment = min_investment
-        self.max_investment = max_investment
+        self.min_pct = min_pct
+        self.max_pct = max_pct
         self.stop_loss_pct = stop_loss_pct
         self.take_profit_pct = take_profit_pct
 
@@ -48,17 +48,18 @@ class SignalGenerator:
         else:
             return 'hold', max(prob_up, prob_down)
 
-    def calculate_position_size(self, confidence, current_price, fractional=False):
+    def calculate_position_size(self, confidence, current_price, equity, fractional=False):
         """
-        Calculate the quantity to buy based on confidence.
+        Calculate the quantity to buy based on confidence and account equity.
 
-        The investment amount is scaled linearly between MIN and MAX
-        investment based on how far above the confidence threshold
-        the model's prediction is.
+        The investment amount is a percentage of equity, scaled linearly
+        between MIN_PCT_ALLOCATION and MAX_PCT_ALLOCATION based on how
+        far above the confidence threshold the model's prediction is.
 
         Args:
             confidence: Model prediction probability (0.0 – 1.0)
             current_price: Current price
+            equity: Current account equity
             fractional: If True, return fractional qty (for crypto).
                         Otherwise return integer qty (for stocks).
 
@@ -67,7 +68,10 @@ class SignalGenerator:
         """
         scale = (confidence - self.confidence_threshold) / (1.0 - self.confidence_threshold)
         scale = max(0.0, min(1.0, scale))
-        investment = self.min_investment + scale * (self.max_investment - self.min_investment)
+        # Dynamic dollar limits based on current equity
+        current_min_dollars = equity * self.min_pct
+        current_max_dollars = equity * self.max_pct
+        investment = current_min_dollars + scale * (current_max_dollars - current_min_dollars)
         if fractional:
             qty = round(investment / current_price, 6)  # up to 6 decimal places
         else:
