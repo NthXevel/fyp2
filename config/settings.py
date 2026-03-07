@@ -16,7 +16,12 @@ def _get_secret(key: str, default: str | None = None) -> str | None:
         return val
     try:
         import streamlit as st
-        return st.secrets.get(key, default)
+        # Use bracket access with KeyError fallback; .get() is unreliable
+        # on some Streamlit versions / when secrets file is missing.
+        try:
+            return st.secrets[key]
+        except KeyError:
+            return default
     except Exception:
         return default
 

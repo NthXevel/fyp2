@@ -19,6 +19,12 @@ from config.settings import (
 
 class TradingExecutor:
     def __init__(self, api_key=ALPACA_API_KEY, secret_key=ALPACA_SECRET_KEY):
+        if not api_key or not secret_key:
+            raise ValueError(
+                "Alpaca credentials not found. "
+                "Set ALPACA_API_KEY and ALPACA_SECRET_KEY in your "
+                ".env file, .streamlit/secrets.toml, or Streamlit Cloud Secrets."
+            )
         paper = 'paper' in ALPACA_BASE_URL.lower()
         self.client = TradingClient(
             api_key=api_key,
