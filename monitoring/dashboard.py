@@ -7,8 +7,6 @@ sys.path.insert(0, ".")
 
 import streamlit as st
 import pandas as pd
-import numpy as np
-import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
 from pathlib import Path
@@ -75,8 +73,8 @@ def _load_model_signal():
         # Feature values for display
         feat_vals = latest.iloc[0].to_dict()
 
-        # Recent close prices for sparkline
-        recent_close = df_feat['close'].dropna().tail(60).tolist()
+        # OHLCV data for candlestick chart
+        ohlcv = df_feat[['open', 'high', 'low', 'close', 'volume']].dropna().tail(60)
 
         # Latest price
         last_price = float(df_feat['close'].dropna().iloc[-1])
@@ -89,7 +87,7 @@ def _load_model_signal():
             'features': feat_vals,
             'feature_cols': feature_cols,
             'last_price': last_price,
-            'recent_close': recent_close,
+            'ohlcv': ohlcv,
             'timestamp': str(df_feat.index[-1]),
         }
     except Exception as e:
@@ -108,6 +106,52 @@ def _load_trade_log():
         except Exception:
             pass
     return None
+
+
+def render_market_chart(df, symbol):
+    """Render a Plotly candlestick chart with EMA overlays and volume."""
+    from plotly.subplots import make_subplots
+
+    ema_10 = df['close'].ewm(span=10).mean()
+    ema_20 = df['close'].ewm(span=20).mean()
+
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True,
+        row_heights=[0.75, 0.25], vertical_spacing=0.03,
+    )
+
+    fig.add_trace(go.Candlestick(
+        x=df.index, open=df['open'], high=df['high'],
+        low=df['low'], close=df['close'], name='Price',
+        increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
+    ), row=1, col=1)
+
+    fig.add_trace(go.Scatter(
+        x=df.index, y=ema_10, mode='lines', name='EMA 10',
+        line=dict(color='#ff9800', width=1.2),
+    ), row=1, col=1)
+
+    fig.add_trace(go.Scatter(
+        x=df.index, y=ema_20, mode='lines', name='EMA 20',
+        line=dict(color='#2196f3', width=1.2),
+    ), row=1, col=1)
+
+    colors = ['#26a69a' if c >= o else '#ef5350'
+              for c, o in zip(df['close'], df['open'])]
+    fig.add_trace(go.Bar(
+        x=df.index, y=df['volume'], name='Volume',
+        marker_color=colors, opacity=0.5,
+    ), row=2, col=1)
+
+    fig.update_layout(
+        title=dict(text=f"{symbol} — Recent Price (last {len(df)} bars)", y=0.98),
+        height=450, xaxis_rangeslider_visible=False,
+        margin=dict(l=0, r=0, t=60, b=0),
+        legend=dict(orientation='h', yanchor='bottom', y=1.06, x=0.25),
+    )
+    fig.update_yaxes(title_text='Price ($)', row=1, col=1)
+    fig.update_yaxes(title_text='Volume', row=2, col=1)
+    return fig
 
 
 def main():
@@ -171,22 +215,9 @@ def main():
                 st.warning(f"Within threshold -> HOLD")
 
         with col_chart:
-            # Recent price sparkline
-            if signal_data['recent_close']:
-                fig_price = go.Figure()
-                fig_price.add_trace(go.Scatter(
-                    y=signal_data['recent_close'],
-                    mode='lines',
-                    line=dict(color='#1f77b4', width=2),
-                    fill='tozeroy',
-                    fillcolor='rgba(31,119,180,0.1)',
-                ))
-                fig_price.update_layout(
-                    title=f"{STOCK_SYMBOL} Recent Price (last 60 bars)",
-                    height=250, margin=dict(l=0, r=0, t=30, b=0),
-                    xaxis=dict(showticklabels=False),
-                    yaxis=dict(title="Price ($)"),
-                )
+            ohlcv = signal_data.get('ohlcv')
+            if ohlcv is not None and not ohlcv.empty:
+                fig_price = render_market_chart(ohlcv, STOCK_SYMBOL)
                 st.plotly_chart(fig_price, use_container_width=True)
 
         # Feature values table
@@ -231,19 +262,7 @@ def main():
                 .T.reset_index()
                 .rename(columns={"index": "symbol"})
             )
-            pos_df["unrealized_pl"] = pos_df["unrealized_pl"].astype(float)
             st.dataframe(pos_df, use_container_width=True)
-
-            # PnL bar chart
-            fig = px.bar(
-                pos_df,
-                x="symbol",
-                y="unrealized_pl",
-                color="unrealized_pl",
-                color_continuous_scale="RdYlGn",
-                title="Unrealized P&L by Position",
-            )
-            st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("No open positions.")
     except Exception as e:
@@ -273,27 +292,29 @@ def main():
 
     st.divider()
 
-    # ── Open Orders ────────────────────────────────────────────────────
-    st.subheader("📋 Open Orders")
+    # ── Open Orders (only shown when orders exist) ─────────────────────
     try:
         open_orders = executor.get_open_orders()
-        if open_orders:
-            orders_data = [
-                {
-                    "id": str(o.id)[:8],
-                    "symbol": o.symbol,
-                    "side": o.side,
-                    "qty": o.qty,
-                    "type": o.type,
-                    "status": o.status,
-                }
-                for o in open_orders
-            ]
-            st.dataframe(pd.DataFrame(orders_data), use_container_width=True)
-        else:
-            st.info("No open orders.")
     except Exception as e:
+        open_orders = None
         st.error(f"Error fetching open orders: {e}")
+
+    has_open_orders = bool(open_orders)
+
+    if has_open_orders:
+        st.subheader("📋 Open Orders")
+        orders_data = [
+            {
+                "id": str(o.id)[:8],
+                "symbol": o.symbol,
+                "side": o.side,
+                "qty": o.qty,
+                "type": o.type,
+                "status": o.status,
+            }
+            for o in open_orders
+        ]
+        st.dataframe(pd.DataFrame(orders_data), use_container_width=True)
 
     # ── Recent Order History ───────────────────────────────────────────
     st.divider()
@@ -344,12 +365,20 @@ def main():
     # ── Controls ───────────────────────────────────────────────────────
     st.divider()
     st.subheader("⚙️ Controls")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        if st.button("🔄 Cancel All Orders", type="secondary"):
-            executor.cancel_all_orders()
-            st.success("All orders cancelled.")
-    with col_b:
+    if has_open_orders:
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if st.button("🔄 Cancel All Orders", type="secondary"):
+                executor.cancel_all_orders()
+                st.success("All orders cancelled.")
+                st.rerun()
+        with col_b:
+            if st.button("🛑 Close All Positions", type="primary"):
+                confirm = st.checkbox("Confirm close all?")
+                if confirm:
+                    executor.close_all_positions()
+                    st.warning("All positions closed!")
+    else:
         if st.button("🛑 Close All Positions", type="primary"):
             confirm = st.checkbox("Confirm close all?")
             if confirm:

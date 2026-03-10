@@ -8,27 +8,27 @@ History Days:           59
 Features (9):  ['Return', 'EMA_10', 'EMA_20', 'Volatility_14', 'Return_Lag_1', 'Return_Lag_3', 'RSI_14', 'MACD_Hist', 'MACD_Line_Norm']
 Optuna Trials:          100
 CV Metric:              AUC
-Scale Pos Weight:       13.8493
+Scale Pos Weight:       13.6092
 Position Sizing:        Confidence-based ($200 – $2000)
 Confidence Threshold:   0.65
 Stop-Loss:              2.0% (per order value)
 Take-Profit:            3.0% (per order value)
 Initial Capital:        $100,000.00
-Final Capital:          $100,113.55
-Cumulative Return:      0.11%
+Final Capital:          $100,811.15
+Cumulative Return:      0.81%
 
-Best CV AUC:            0.6816
-Baseline Test Accuracy: 0.9501
-Baseline Test AUC:      0.6753
-Final Test Accuracy:    0.7291
-Final Test AUC:         0.6348
-Final Test F1:          0.1314
+Best CV AUC:            0.6682
+Baseline Test Accuracy: 0.9314
+Baseline Test AUC:      0.6802
+Final Test Accuracy:    0.6586
+Final Test AUC:         0.6336
+Final Test F1:          0.1619
 
 --- Target Metrics ---
-Accuracy:   0.7291  (target >= 0.55)  [MET]
-Sharpe:     0.081   (target >= 0.5)   [MISSED]
-Max DD:     -0.56%  (target <= 10%)   [MET]
+Accuracy:   0.6586  (target >= 0.55)  [MET]
+Sharpe:     0.410   (target >= 0.5)   [MISSED]
+Max DD:     -0.51%  (target <= 10%)   [MET]
 
 Win Rate:               100.00%
-Number of Trades:       20
-Best Params:            {'n_estimators': 136, 'max_depth': 3, 'learning_rate': 0.014191648621388081, 'subsample': 0.9852990245170554, 'colsample_bytree': 0.5008450954562516, 'min_child_weight': 10, 'gamma': 0.04674382001663721, 'reg_alpha': 0.003916203166716051, 'reg_lambda': 0.001960622480851822, 'scale_pos_weight': np.float64(13.849315068493151), 'objective': 'binary:logistic', 'eval_metric': 'auc', 'random_state': 42, 'verbosity': 0}
+Number of Trades:       26
+Best Params:            {'n_estimators': 108, 'max_depth': 3, 'learning_rate': 0.01563310426926497, 'subsample': 0.9419468969891834, 'colsample_bytree': 0.535104727355456, 'min_child_weight': 6, 'gamma': 0.15584769342984944, 'reg_alpha': 0.004906021347136304, 'reg_lambda': 0.0031540905830141535, 'scale_pos_weight': np.float64(13.609164420485175), 'objective': 'binary:logistic', 'eval_metric': 'auc', 'random_state': 42, 'verbosity': 0}
