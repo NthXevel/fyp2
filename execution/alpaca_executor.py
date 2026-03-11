@@ -53,6 +53,11 @@ class TradingExecutor:
             print(f"Error getting account info: {e}")
             return None
     
+    @staticmethod
+    def _norm_symbol(s: str) -> str:
+        """Normalise symbol for comparison (strip / and - , upper-case)."""
+        return s.replace('/', '').replace('-', '').upper()
+
     def get_position(self):
         """
         Get current position in the stock
@@ -62,10 +67,11 @@ class TradingExecutor:
         """
         try:
             positions = self.client.get_all_positions()
+            target = self._norm_symbol(self.symbol)
             for position in positions:
-                if position.symbol == self.symbol:
+                if self._norm_symbol(position.symbol) == target:
                     return {
-                        'qty': int(float(position.qty)),
+                        'qty': float(position.qty),
                         'avg_entry_price': float(position.avg_entry_price),
                         'current_price': float(position.current_price),
                         'unrealized_pl': float(position.unrealized_pl),

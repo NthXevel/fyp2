@@ -39,8 +39,15 @@ class TradingBot:
         self.logger = TradeLogger()
 
         # Risk-management state
-        self.entry_price = None   # track buy price for SL/TP
         self._is_crypto = is_crypto(STOCK_SYMBOL)
+
+        # Recover entry price from existing position (survives restarts)
+        existing = self.executor.get_position()
+        if existing and existing['qty'] > 0:
+            self.entry_price = existing['avg_entry_price']
+            print(f"Recovered existing position: {existing['qty']} @ ${self.entry_price:.2f}")
+        else:
+            self.entry_price = None
 
         # Load trained model
         if not self.trainer.load():
@@ -89,6 +96,11 @@ class TradingBot:
         position = self.executor.get_position()
 
         if action == 'buy':
+            # Skip buying if already holding a position
+            if position and position['qty'] > 0:
+                print(f"Already holding {position['qty']} — skipping BUY")
+                return
+
             quote = self.fetcher.get_realtime_quote()
             if quote:
                 current_price = quote['c']
@@ -108,8 +120,8 @@ class TradingBot:
                     print(f"Insufficient buying power. Available: ${account['buying_power']}")
 
         elif action == 'sell':
-            if position and float(position['qty']) > 0:
-                sell_qty = float(position['qty']) if self._is_crypto else int(position['qty'])
+            if position and position['qty'] > 0:
+                sell_qty = position['qty'] if self._is_crypto else int(position['qty'])
                 self.executor.place_sell_order(sell_qty)
                 self.logger.log('SELL', STOCK_SYMBOL, sell_qty,
                                 position['current_price'], confidence)
