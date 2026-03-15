@@ -10,7 +10,7 @@ Feature groups:
     Momentum     : RSI_14 (z-scored RSI), MACD_Hist (normalised)
 
 Target:
-    3-day forward return > +0.5 % → class 1 (Buy), else 0
+    3-bar forward return > +0.5 % → class 1 (Buy), else 0
 
 Supports single-stock and multi-stock training.  When multiple symbols
 are used, a 'symbol' column is carried through but NOT included as a
@@ -83,10 +83,10 @@ class FeatureEngineer:
 
         # ── Target (FIXED: Predict a larger 3-day move to beat fees) ─
         # Transaction costs in your engine are 0.1% per trade (0.2% round trip).
-        # If we only predict a 1-day move, fees eat all our profits.
-        # Let's predict if the stock will be up more than 0.5% over the next 3 days.
-        future_return = (df['close'].shift(-3) / df['close']) - 1
-        df['Target'] = (future_return > 0.008).astype(int) 
+        # If we only predict a 1-bar move, fees eat all our profits.
+        # Predict if price will be up more than TARGET_THRESHOLD over the next FORWARD_BARS bars.
+        future_return = (df['close'].shift(-FORWARD_BARS) / df['close']) - 1
+        df['Target'] = (future_return > TARGET_THRESHOLD).astype(int) 
         
         return df
     

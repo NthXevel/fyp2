@@ -7,6 +7,8 @@ Handles all interactions with the Alpaca brokerage API:
     • Order placement (buy / sell)
     • Order history
 """
+from datetime import datetime, timezone
+
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, QueryOrderStatus
@@ -15,6 +17,7 @@ from config.settings import (
     STOCK_SYMBOL, STOP_LOSS_PCT, TAKE_PROFIT_PCT,
     is_crypto, alpaca_symbol,
 )
+from utils.db_connector import init_database, insert_trade_log
 
 
 class TradingExecutor:
@@ -33,6 +36,45 @@ class TradingExecutor:
         )
         self.symbol = alpaca_symbol(STOCK_SYMBOL)
         self._is_crypto = is_crypto(STOCK_SYMBOL)
+        try:
+            init_database()
+        except Exception as exc:
+            print(f"Warning: database init failed in TradingExecutor: {exc}")
+
+    def _log_trade_event(
+        self,
+        *,
+        action: str,
+        symbol: str,
+        qty: float,
+        price: float,
+        confidence: float | None = None,
+        investment: float | None = None,
+        capital: float | None = None,
+        order_id: str | None = None,
+        status: str | None = None,
+        note: str | None = None,
+        run_id: str | None = None,
+    ) -> None:
+        try:
+            insert_trade_log(
+                event_time=datetime.now(timezone.utc),
+                symbol=symbol,
+                action=action,
+                qty=float(qty),
+                price=float(price),
+                confidence=confidence,
+                investment=investment,
+                capital=capital,
+                order_id=order_id,
+                status=status,
+                venue="alpaca",
+                mode="live",
+                run_id=run_id,
+                notes=note,
+            )
+        except Exception as exc:
+            print(f"Warning: failed to log trade to database: {exc}")
     
     def get_account_info(self):
         """
@@ -82,7 +124,7 @@ class TradingExecutor:
             print(f"Error getting position: {e}")
             return None
     
-    def place_buy_order(self, qty):
+    def place_buy_order(self, qty, confidence=None, investment=None, capital=None, note="", run_id=None):
         """
         Place a buy market order.
         Crypto orders use 'gtc' time-in-force and support fractional qty.
@@ -103,6 +145,20 @@ class TradingExecutor:
             )
             order = self.client.submit_order(order_data)
             print(f"Buy order placed: {qty} shares of {self.symbol}")
+            fill_price = float(order.filled_avg_price) if order.filled_avg_price else None
+            self._log_trade_event(
+                action="BUY",
+                symbol=order.symbol,
+                qty=float(order.qty),
+                price=fill_price if fill_price is not None else float(investment / float(qty)) if investment and qty else 0.0,
+                confidence=confidence,
+                investment=investment,
+                capital=capital,
+                order_id=str(order.id),
+                status=str(order.status),
+                note=note,
+                run_id=run_id,
+            )
             return {
                 'order_id': str(order.id),
                 'symbol': order.symbol,
@@ -114,7 +170,7 @@ class TradingExecutor:
             print(f"Error placing buy order: {e}")
             return None
     
-    def place_sell_order(self, qty):
+    def place_sell_order(self, qty, confidence=None, capital=None, note="", run_id=None):
         """
         Place a sell market order.
         Crypto orders use 'gtc' time-in-force and support fractional qty.
@@ -135,6 +191,19 @@ class TradingExecutor:
             )
             order = self.client.submit_order(order_data)
             print(f"Sell order placed: {qty} shares of {self.symbol}")
+            fill_price = float(order.filled_avg_price) if order.filled_avg_price else 0.0
+            self._log_trade_event(
+                action="SELL",
+                symbol=order.symbol,
+                qty=float(order.qty),
+                price=fill_price,
+                confidence=confidence,
+                capital=capital,
+                order_id=str(order.id),
+                status=str(order.status),
+                note=note,
+                run_id=run_id,
+            )
             return {
                 'order_id': str(order.id),
                 'symbol': order.symbol,

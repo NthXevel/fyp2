@@ -9,7 +9,7 @@ Targets:
 import time
 import sys
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Add project root to Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -19,7 +19,6 @@ from utils.data_fetcher import DataFetcher
 from strategies.feature_engineering import FeatureEngineer
 from strategies.signal_generator import SignalGenerator
 from execution.alpaca_executor import TradingExecutor
-from monitoring.logger import TradeLogger
 from config.settings import (
     STOCK_SYMBOL, INVESTMENT_AMOUNT, LOOKBACK_PERIOD, DATA_INTERVAL,
     CONFIDENCE_THRESHOLD, MIN_PCT_ALLOCATION, MAX_PCT_ALLOCATION,
@@ -27,6 +26,7 @@ from config.settings import (
     TARGET_ACCURACY, TARGET_SHARPE, TARGET_MAX_DRAWDOWN,
     is_crypto,
 )
+from utils.db_connector import init_database, insert_prediction
 
 
 class TradingBot:
@@ -36,9 +36,9 @@ class TradingBot:
         self.engineer = FeatureEngineer()
         self.executor = TradingExecutor()
         self.signal = SignalGenerator()
-        self.logger = TradeLogger()
         self.sell_cooldown_bars_after_buy = 8
         self.sell_cooldown_remaining = 0
+        init_database()
 
         # Risk-management state
         self._is_crypto = is_crypto(STOCK_SYMBOL)
@@ -117,20 +117,25 @@ class TradingBot:
                 print(f"Confidence: {confidence:.2%} -> Investment: ${investment:.2f} -> Qty: {qty} shares")
 
                 if qty > 0 and float(account['buying_power']) > qty * current_price:
-                    self.executor.place_buy_order(qty)
+                    self.executor.place_buy_order(
+                        qty,
+                        confidence=confidence,
+                        investment=investment,
+                        capital=float(account['equity']),
+                    )
                     self.entry_price = current_price
                     self.sell_cooldown_remaining = self.sell_cooldown_bars_after_buy
-                    self.logger.log('BUY', STOCK_SYMBOL, qty, current_price,
-                                    confidence, investment)
                 else:
                     print(f"Insufficient buying power. Available: ${account['buying_power']}")
 
         elif action == 'sell':
             if position and position['qty'] > 0:
                 sell_qty = position['qty'] if self._is_crypto else int(position['qty'])
-                self.executor.place_sell_order(sell_qty)
-                self.logger.log('SELL', STOCK_SYMBOL, sell_qty,
-                                position['current_price'], confidence)
+                self.executor.place_sell_order(
+                    sell_qty,
+                    confidence=confidence,
+                    capital=float(account['equity']),
+                )
                 self.entry_price = None
                 self.sell_cooldown_remaining = 0
             else:
@@ -206,6 +211,20 @@ class TradingBot:
                     action = 'hold'
 
                 print(f"Decision: {action.upper()} (confidence: {confidence:.2%})")
+
+                try:
+                    insert_prediction(
+                        prediction_time=datetime.now(timezone.utc),
+                        symbol=STOCK_SYMBOL,
+                        signal=action,
+                        prob_up=float(probabilities[0][1]),
+                        prob_down=float(probabilities[0][0]),
+                        confidence=float(confidence),
+                        timeframe=DATA_INTERVAL,
+                        model_name="xgboost",
+                    )
+                except Exception as exc:
+                    print(f"Warning: prediction logging failed: {exc}")
 
                 # Execute trade
                 if action in ['buy', 'sell']:

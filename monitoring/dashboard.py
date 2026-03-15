@@ -10,6 +10,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
 from pathlib import Path
+from sqlalchemy import text
 
 from config.settings import (
     STOCK_SYMBOL, CONFIDENCE_THRESHOLD,
@@ -19,6 +20,7 @@ from config.settings import (
 )
 from execution.alpaca_executor import TradingExecutor
 from monitoring.bot_manager import is_running, start, stop, get_log
+from utils.db_connector import get_engine, init_database
 
 st.set_page_config(page_title="Quant Bot Dashboard", layout="wide", page_icon="📈")
 
@@ -95,17 +97,69 @@ def _load_model_signal():
         return None
 
 
-def _load_trade_log():
-    """Load the live trade log CSV if it exists."""
-    log_path = Path("reports/live_trade_log.csv")
-    if log_path.exists():
-        try:
-            df = pd.read_csv(log_path)
-            if not df.empty:
-                return df
-        except Exception:
-            pass
-    return None
+def _query_df(sql: str, params: dict | None = None) -> pd.DataFrame:
+    """Run SQL and return DataFrame; returns empty on errors for resilient UI."""
+    try:
+        with get_engine().connect() as conn:
+            return pd.read_sql(text(sql), conn, params=params or {})
+    except Exception:
+        return pd.DataFrame()
+
+
+def _load_trade_log(limit: int = 200) -> pd.DataFrame:
+    return _query_df(
+        """
+        SELECT event_time AS timestamp, action, symbol, qty, price, confidence,
+               investment, capital, order_id, status, venue, mode, run_id, notes
+        FROM trade_logs
+        ORDER BY event_time DESC
+        LIMIT :limit
+        """,
+        {"limit": limit},
+    )
+
+
+def _load_equity_curve(limit: int = 400) -> pd.DataFrame:
+    df = _query_df(
+        """
+        SELECT event_time, capital
+        FROM trade_logs
+        WHERE capital IS NOT NULL
+        ORDER BY event_time ASC
+        LIMIT :limit
+        """,
+        {"limit": limit},
+    )
+    if not df.empty:
+        df["event_time"] = pd.to_datetime(df["event_time"])
+    return df
+
+
+def _load_predictions(limit: int = 120) -> pd.DataFrame:
+    return _query_df(
+        """
+        SELECT prediction_time, symbol, timeframe, model_name, signal,
+               prob_up, prob_down, confidence
+        FROM predictions
+        ORDER BY prediction_time DESC
+        LIMIT :limit
+        """,
+        {"limit": limit},
+    )
+
+
+def _load_backtest_metrics(limit: int = 20) -> pd.DataFrame:
+    return _query_df(
+        """
+        SELECT created_at, run_id, symbol, timeframe, final_capital,
+               cumulative_return, sharpe_ratio, max_drawdown, win_rate,
+               num_trades, test_accuracy
+        FROM backtest_metrics
+        ORDER BY created_at DESC
+        LIMIT :limit
+        """,
+        {"limit": limit},
+    )
 
 
 def render_market_chart(df, symbol):
@@ -155,6 +209,7 @@ def render_market_chart(df, symbol):
 
 
 def main():
+    init_database()
     st.title("📈 XGBoost Quant Bot — Live Dashboard")
     st.caption(f"Last refreshed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
@@ -274,6 +329,7 @@ def main():
     st.subheader("📒 Trade Log")
     trade_log = _load_trade_log()
     if trade_log is not None and not trade_log.empty:
+        trade_log['timestamp'] = pd.to_datetime(trade_log['timestamp'])
         # Show summary stats
         n_buys = (trade_log['action'] == 'BUY').sum()
         n_sells = trade_log['action'].str.startswith('SELL').sum()
@@ -284,11 +340,53 @@ def main():
 
         # Table (most recent first)
         st.dataframe(
-            trade_log.sort_index(ascending=False),
+            trade_log.sort_values('timestamp', ascending=False),
             use_container_width=True, hide_index=True,
         )
     else:
         st.info("No trades logged yet.")
+
+    st.divider()
+
+    # ── Equity Curve (DB) ─────────────────────────────────────────────
+    st.subheader("📉 Equity Curve")
+    equity_df = _load_equity_curve()
+    if not equity_df.empty:
+        fig_eq = go.Figure()
+        fig_eq.add_trace(
+            go.Scatter(
+                x=equity_df['event_time'],
+                y=equity_df['capital'],
+                mode='lines+markers',
+                name='Capital',
+                line=dict(color='#1565c0', width=2),
+            )
+        )
+        fig_eq.update_layout(height=280, margin=dict(l=0, r=0, t=20, b=0))
+        st.plotly_chart(fig_eq, use_container_width=True)
+    else:
+        st.info("No equity curve data in database yet.")
+
+    st.divider()
+
+    # ── Model Predictions (DB) ────────────────────────────────────────
+    st.subheader("🧠 Recent Predictions")
+    pred_df = _load_predictions()
+    if not pred_df.empty:
+        pred_df['prediction_time'] = pd.to_datetime(pred_df['prediction_time'])
+        st.dataframe(pred_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("No prediction records found yet.")
+
+    st.divider()
+
+    # ── Backtest Metrics (DB) ─────────────────────────────────────────
+    st.subheader("🧪 Backtest Metrics")
+    metrics_df = _load_backtest_metrics()
+    if not metrics_df.empty:
+        st.dataframe(metrics_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("No backtest metrics found yet.")
 
     st.divider()
 

@@ -1,29 +1,16 @@
 """
 Trade logging utility for recording trading activity and performance.
 """
-import os
-import csv
-from datetime import datetime
+from datetime import datetime, timezone
+
+from utils.db_connector import init_database, insert_trade_log
 
 
 class TradeLogger:
-    """Log trades to a CSV file for audit and analysis."""
+    """Log trades to PostgreSQL for audit and analysis."""
 
-    def __init__(self, log_dir='reports', filename='live_trade_log.csv'):
-        self.log_dir = log_dir
-        os.makedirs(log_dir, exist_ok=True)
-        self.filepath = os.path.join(log_dir, filename)
-        self._ensure_header()
-
-    def _ensure_header(self):
-        """Create the CSV file with a header row if it does not exist."""
-        if not os.path.exists(self.filepath):
-            with open(self.filepath, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f)
-                writer.writerow([
-                    'timestamp', 'action', 'symbol', 'qty',
-                    'price', 'confidence', 'investment', 'note',
-                ])
+    def __init__(self):
+        init_database()
 
     def log(self, action, symbol, qty, price, confidence=0.0,
             investment=0.0, note=''):
@@ -39,15 +26,15 @@ class TradeLogger:
             investment: Dollar investment amount
             note: Free-text note
         """
-        with open(self.filepath, 'a', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                datetime.now().isoformat(),
-                action,
-                symbol,
-                qty,
-                round(price, 4),
-                round(confidence, 4),
-                round(investment, 2),
-                note,
-            ])
+        insert_trade_log(
+            event_time=datetime.now(timezone.utc),
+            symbol=symbol,
+            action=action,
+            qty=float(qty),
+            price=round(float(price), 4),
+            confidence=round(float(confidence), 4),
+            investment=round(float(investment), 2),
+            venue="alpaca",
+            mode="live",
+            notes=note,
+        )

@@ -7,6 +7,9 @@ Supports:
     • Minimum hold period (matches FORWARD_BARS target horizon)
     • Performance metrics: Sharpe ratio, max drawdown, win rate
 """
+from datetime import datetime, timezone
+from uuid import uuid4
+
 import numpy as np
 import pandas as pd
 from config.settings import (
@@ -15,6 +18,7 @@ from config.settings import (
     MIN_PCT_ALLOCATION, MAX_PCT_ALLOCATION,
 )
 from strategies.feature_engineering import FORWARD_BARS
+from utils.db_connector import init_database, insert_trade_log, upsert_backtest_metric
 
 # Approximate number of 15-minute bars in a trading year
 BARS_PER_YEAR = 26 * 252
@@ -34,8 +38,10 @@ class BacktestEngine:
         self.stop_loss = stop_loss
         self.take_profit = take_profit
         self.confidence_threshold = confidence_threshold
+        self._last_run_id = None
+        init_database()
 
-    def run(self, test_df, predictions, probabilities):
+    def run(self, test_df, predictions, probabilities, symbol="BTC/USD", timeframe="15m", run_id=None, persist=True):
         """
         Execute a long-only backtest.
 
@@ -131,7 +137,37 @@ class BacktestEngine:
 
         results = pd.DataFrame(portfolio_values).set_index('date')
         trade_log_df = pd.DataFrame(trade_log)
+
+        run_key = run_id or f"backtest-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}"
+        self._last_run_id = run_key
+        if persist and not trade_log_df.empty:
+            self._persist_trade_log(trade_log_df, symbol=symbol, run_id=run_key)
+
         return results, trade_log_df
+
+    @staticmethod
+    def _persist_trade_log(trade_log: pd.DataFrame, symbol: str, run_id: str) -> None:
+        """Write backtest trade events to trade_logs table."""
+        for _, row in trade_log.iterrows():
+            event_time = row['date']
+            if isinstance(event_time, pd.Timestamp):
+                event_time = event_time.to_pydatetime()
+            if event_time.tzinfo is None:
+                event_time = event_time.replace(tzinfo=timezone.utc)
+
+            insert_trade_log(
+                event_time=event_time,
+                symbol=symbol,
+                action=str(row['action']),
+                qty=float(row['shares']),
+                price=float(row['price']),
+                confidence=float(row.get('confidence', 0.0)),
+                investment=float(row.get('investment', 0.0)),
+                capital=float(row.get('capital', 0.0)),
+                venue="backtest",
+                mode="backtest",
+                run_id=run_id,
+            )
 
     # ── Performance metrics ──────────────────────────────────────────
 
@@ -149,7 +185,7 @@ class BacktestEngine:
         drawdown = (portfolio_values - cum_max) / cum_max
         return drawdown.min()
 
-    def summary(self, results, trade_log, test_accuracy):
+    def summary(self, results, trade_log, test_accuracy, symbol="BTC/USD", timeframe="15m", run_id=None, persist=True):
         """
         Compute and print a performance summary.
 
@@ -191,7 +227,7 @@ class BacktestEngine:
         print(f"  Win rate:    {win_rate:.2%}")
         print(f"  Trades:      {num_trades}  (buys: {num_buys}, sells: {num_sells})")
 
-        return {
+        metrics = {
             'initial_capital': self.initial_capital,
             'final_capital': round(final_capital, 2),
             'cumulative_return': round(cum_return, 4),
@@ -201,3 +237,27 @@ class BacktestEngine:
             'num_trades': num_trades,
             'test_accuracy': round(test_accuracy, 4),
         }
+
+        if persist:
+            run_key = run_id or self._last_run_id or f"backtest-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}"
+            upsert_backtest_metric(
+                run_id=run_key,
+                symbol=symbol,
+                timeframe=timeframe,
+                initial_capital=float(self.initial_capital),
+                final_capital=float(metrics['final_capital']),
+                cumulative_return=float(metrics['cumulative_return']),
+                sharpe_ratio=float(metrics['sharpe_ratio']),
+                max_drawdown=float(metrics['max_drawdown']),
+                win_rate=float(metrics['win_rate']),
+                num_trades=int(metrics['num_trades']),
+                test_accuracy=float(metrics['test_accuracy']),
+                metadata={
+                    'transaction_cost': self.transaction_cost,
+                    'confidence_threshold': self.confidence_threshold,
+                    'stop_loss': self.stop_loss,
+                    'take_profit': self.take_profit,
+                },
+            )
+
+        return metrics

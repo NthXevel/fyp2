@@ -1,5 +1,5 @@
 """
-Data Downloader — Downloads historical stock data to local CSV files.
+Data Downloader — Downloads historical stock data and upserts into PostgreSQL.
 Uses Yahoo Finance as data source.
 
 Usage:
@@ -22,10 +22,9 @@ import yfinance as yf
 from config.settings import (
     STOCK_SYMBOL, TRAINING_SYMBOLS, TRAINING_INTERVAL, TRAINING_DAYS,
     TRAINING_INTERVALS, TRAINING_DAYS_15M,
-    yahoo_symbol, safe_filename,
+    yahoo_symbol,
 )
-
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+from utils.db_connector import init_database, upsert_market_data
 
 
 def download_stock_data(symbol: str, days: int = 365, interval: str = "1d") -> pd.DataFrame | None:
@@ -87,20 +86,15 @@ def download_stock_data(symbol: str, days: int = 365, interval: str = "1d") -> p
         return None
 
 
-def save_to_csv(df: pd.DataFrame, symbol: str, interval: str) -> str:
-    """Save a DataFrame to data/<SYMBOL>_<interval>.csv and return the path.
-    Crypto symbols like BTC/USD are saved as BTCUSD_1d.csv.
-    """
-    os.makedirs(DATA_DIR, exist_ok=True)
-    filename = f"{safe_filename(symbol)}_{interval}.csv"
-    filepath = os.path.join(DATA_DIR, filename)
-    df.to_csv(filepath)
-    print(f"  -> Saved to {filepath}")
-    return filepath
+def save_to_db(df: pd.DataFrame, symbol: str, interval: str) -> int:
+    """Upsert DataFrame rows into market_data table and return row count."""
+    rows = upsert_market_data(df, symbol=symbol, timeframe=interval, source="yahoo")
+    print(f"  -> Upserted {rows} row(s) into market_data")
+    return rows
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Download historical stock data to CSV.")
+    parser = argparse.ArgumentParser(description="Download historical stock data to PostgreSQL.")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--symbol", type=str, default=None,
                        help="Single ticker symbol to download")
@@ -134,7 +128,8 @@ def main():
     print(f"Intervals : {', '.join(intervals)}")
     print(f"{'=' * 50}\n")
 
-    saved_files = []
+    init_database()
+    total_rows = 0
     for interval in intervals:
         # Choose appropriate lookback per interval
         if args.days:
@@ -149,18 +144,15 @@ def main():
             df = download_stock_data(symbol, days=days, interval=interval)
 
             if df is not None:
-                path = save_to_csv(df, symbol, interval)
-                saved_files.append(path)
+                total_rows += save_to_db(df, symbol, interval)
             print()
 
     # Summary
     print(f"{'=' * 50}")
-    if saved_files:
-        print(f"Done! {len(saved_files)} file(s) saved to '{DATA_DIR}':")
-        for f in saved_files:
-            print(f"  - {f}")
+    if total_rows > 0:
+        print(f"Done! {total_rows} row(s) written to PostgreSQL market_data.")
     else:
-        print("No data was downloaded.")
+        print("No data was downloaded or persisted.")
     print(f"{'=' * 50}")
 
 

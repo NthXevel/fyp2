@@ -8,6 +8,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 from config.settings import STOCK_SYMBOL, DATA_INTERVAL, DATA_DAYS, yahoo_symbol
+from utils.db_connector import init_database, load_market_data, upsert_market_data
 
 
 class DataFetcher:
@@ -72,6 +73,28 @@ class DataFetcher:
         except Exception as e:
             print(f"Exception occurred while fetching data: {e}")
             return None
+
+    def get_historical_data_from_db(self, days=DATA_DAYS, interval=None):
+        """Load historical bars from PostgreSQL."""
+        if interval is None:
+            interval = self.interval
+        try:
+            init_database()
+            return load_market_data(symbol=self.symbol, timeframe=interval, days=days)
+        except Exception as e:
+            print(f"Exception occurred while loading DB market data: {e}")
+            return None
+
+    def save_historical_data_to_db(self, df: pd.DataFrame, interval=None, source="yahoo") -> int:
+        """Persist fetched bars into PostgreSQL using upsert semantics."""
+        if interval is None:
+            interval = self.interval
+        try:
+            init_database()
+            return upsert_market_data(df, symbol=self.symbol, timeframe=interval, source=source)
+        except Exception as e:
+            print(f"Exception occurred while saving DB market data: {e}")
+            return 0
     
     def get_realtime_quote(self):
         """

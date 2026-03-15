@@ -1,6 +1,6 @@
 """
-Accumulate intraday bars — run periodically (e.g. daily via cron / Task Scheduler)
-to grow your local CSV with new 15-minute bars.
+Accumulate intraday bars — run periodically (e.g. daily via Task Scheduler)
+to upsert fresh 15-minute bars into PostgreSQL.
 
 Usage:
     python -m scripts.accumulate_data                          # Append for default symbol
@@ -17,9 +17,8 @@ from datetime import datetime, timedelta
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import yfinance as yf
-from config.settings import STOCK_SYMBOL, TRAINING_SYMBOLS
-
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+from config.settings import TRAINING_SYMBOLS, yahoo_symbol
+from utils.db_connector import init_database, upsert_market_data
 
 
 def _yahoo_fetch(symbol: str, interval: str, days: int) -> pd.DataFrame | None:
@@ -27,7 +26,7 @@ def _yahoo_fetch(symbol: str, interval: str, days: int) -> pd.DataFrame | None:
     end = datetime.now()
     start = end - timedelta(days=days)
     try:
-        df = yf.download(symbol, start=start, end=end,
+        df = yf.download(yahoo_symbol(symbol), start=start, end=end,
                          interval=interval, progress=False)
         if df is None or df.empty:
             return None
@@ -47,11 +46,8 @@ def _yahoo_fetch(symbol: str, interval: str, days: int) -> pd.DataFrame | None:
 
 def accumulate(symbol: str, interval: str, days: int):
     """
-    Download recent bars and append only the NEW rows to the local CSV.
+    Download recent bars and upsert them into PostgreSQL.
     """
-    os.makedirs(DATA_DIR, exist_ok=True)
-    csv_path = os.path.join(DATA_DIR, f"{symbol}_{interval}.csv")
-
     # Fetch new data
     new_df = _yahoo_fetch(symbol, interval, days)
 
@@ -59,21 +55,8 @@ def accumulate(symbol: str, interval: str, days: int):
         print(f"  [{symbol}] No new data fetched.")
         return
 
-    # Load existing CSV (if any) and merge
-    if os.path.exists(csv_path):
-        existing = pd.read_csv(csv_path, index_col='date', parse_dates=True)
-        before = len(existing)
-        combined = pd.concat([existing, new_df])
-        combined = combined[~combined.index.duplicated(keep='last')]
-        combined.sort_index(inplace=True)
-        new_rows = len(combined) - before
-    else:
-        combined = new_df
-        new_rows = len(combined)
-
-    combined.to_csv(csv_path)
-    print(f"  [{symbol}] {new_rows} new rows appended -> {csv_path}  "
-          f"(total: {len(combined)} rows)")
+    rows = upsert_market_data(new_df, symbol=symbol, timeframe=interval, source="yahoo")
+    print(f"  [{symbol}] upserted {rows} row(s) into market_data")
 
 
 def main():
@@ -94,6 +77,8 @@ def main():
     print(f"  Symbols : {', '.join(symbols)}")
     print(f"  Interval: {args.interval}  |  Last {args.days} days")
     print(f"{'=' * 55}\n")
+
+    init_database()
 
     for sym in symbols:
         accumulate(sym, args.interval, args.days)
