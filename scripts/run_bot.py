@@ -37,6 +37,8 @@ class TradingBot:
         self.executor = TradingExecutor()
         self.signal = SignalGenerator()
         self.logger = TradeLogger()
+        self.sell_cooldown_bars_after_buy = 8
+        self.sell_cooldown_remaining = 0
 
         # Risk-management state
         self._is_crypto = is_crypto(STOCK_SYMBOL)
@@ -65,7 +67,8 @@ class TradingBot:
         Fetch latest 15m data and compute features for prediction
 
         Returns:
-            pd.DataFrame: Latest features for prediction
+            tuple[pd.DataFrame, float | None, float | None]:
+                (latest_features, macro_sma_4h, latest_close)
         """
         # Need enough bars for indicator warmup; fetch extra days
         df = self.fetcher.get_historical_data(days=min(LOOKBACK_PERIOD + 10, 59))
@@ -77,7 +80,9 @@ class TradingBot:
 
         # Get the latest row
         latest = df[feature_cols].iloc[-1:]
-        return latest
+        macro_sma_4h = df['Macro_SMA_4H'].iloc[-1] if 'Macro_SMA_4H' in df.columns else None
+        latest_close = df['close'].iloc[-1] if 'close' in df.columns else None
+        return latest, macro_sma_4h, latest_close
 
     def execute_trade(self, action, confidence=0.5):
         """
@@ -114,6 +119,7 @@ class TradingBot:
                 if qty > 0 and float(account['buying_power']) > qty * current_price:
                     self.executor.place_buy_order(qty)
                     self.entry_price = current_price
+                    self.sell_cooldown_remaining = self.sell_cooldown_bars_after_buy
                     self.logger.log('BUY', STOCK_SYMBOL, qty, current_price,
                                     confidence, investment)
                 else:
@@ -126,6 +132,7 @@ class TradingBot:
                 self.logger.log('SELL', STOCK_SYMBOL, sell_qty,
                                 position['current_price'], confidence)
                 self.entry_price = None
+                self.sell_cooldown_remaining = 0
             else:
                 print("No position to sell")
 
@@ -146,11 +153,12 @@ class TradingBot:
                 print(f"\n[{timestamp}] Checking market conditions...")
 
                 # Get latest features
-                features = self.get_latest_features()
-                if features is None:
+                features_data = self.get_latest_features()
+                if features_data is None:
                     print("Failed to fetch latest data. Retrying...")
                     time.sleep(60)
                     continue
+                features, macro_sma_4h, latest_close = features_data
 
                 # Fetch real-time stock info
                 quote = self.fetcher.get_realtime_quote()
@@ -181,11 +189,32 @@ class TradingBot:
                 probabilities = self.trainer.predict(features)
                 action, confidence = self.signal.decide_trade(probabilities)
 
+                # Macro trend filter: only buy when current price is above 4h SMA.
+                if action == 'buy':
+                    trend_price = quote['c'] if quote else latest_close
+                    if macro_sma_4h is None or trend_price is None:
+                        action = 'hold'
+                        print("Trend filter unavailable (missing Macro_SMA_4H) -> HOLD")
+                    elif trend_price <= macro_sma_4h:
+                        action = 'hold'
+                        print(f"Trend filter blocked BUY: price ${trend_price:.2f} <= 4h SMA ${macro_sma_4h:.2f}")
+
+                # Cooldown only suppresses model-driven SELL signals.
+                # SL/TP executes earlier in the loop and bypasses this guard.
+                if action == 'sell' and self.sell_cooldown_remaining > 0:
+                    print(f"Cooldown active ({self.sell_cooldown_remaining} bars remaining) -> ignoring model SELL")
+                    action = 'hold'
+
                 print(f"Decision: {action.upper()} (confidence: {confidence:.2%})")
 
                 # Execute trade
                 if action in ['buy', 'sell']:
                     self.execute_trade(action, confidence)
+
+                # Count down sell cooldown one bar at a time while holding a position.
+                position_after = self.executor.get_position()
+                if position_after and position_after['qty'] > 0 and self.sell_cooldown_remaining > 0:
+                    self.sell_cooldown_remaining -= 1
 
                 # Wait for next check
                 print(f"Next check in {check_interval}s...")

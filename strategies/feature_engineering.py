@@ -22,6 +22,7 @@ import numpy as np
 # How many bars ahead the target looks & minimum move to count as "up"
 FORWARD_BARS = 3
 TARGET_THRESHOLD = 0.005     # 0.5 %
+MACRO_SMA_WINDOW_BARS = 16   # 4h SMA on 15m bars
 
 # The exact feature columns used for training / prediction
 FEATURE_COLUMNS = [
@@ -75,6 +76,10 @@ class FeatureEngineer:
         # ── Lagged returns ──────────────────────────────────────────
         df['Return_Lag_1'] = df['Return'].shift(1)
         df['Return_Lag_3'] = df['Return'].shift(3)
+
+        # ── Macro trend filter helper (not used as model feature) ───
+        # 4-hour SMA derived from 15m bars for high-timeframe trend gating.
+        df['Macro_SMA_4H'] = df['close'].rolling(window=MACRO_SMA_WINDOW_BARS).mean()
 
         # ── Target (FIXED: Predict a larger 3-day move to beat fees) ─
         # Transaction costs in your engine are 0.1% per trade (0.2% round trip).

@@ -58,7 +58,7 @@ TRAINING_DAYS      = int(_get_secret('TRAINING_DAYS', '59'))   # Yahoo max ~60 d
 TRAINING_DAYS_15M  = int(_get_secret('TRAINING_DAYS_15M', '59'))  # Yahoo max ~60 days for 15m
 
 # Confidence-based position sizing
-CONFIDENCE_THRESHOLD = float(_get_secret('CONFIDENCE_THRESHOLD', '0.65'))
+CONFIDENCE_THRESHOLD = float(_get_secret('CONFIDENCE_THRESHOLD', '0.75'))
 MIN_PCT_ALLOCATION = float(_get_secret('MIN_PCT_ALLOCATION', '0.10'))   # 10% of equity
 MAX_PCT_ALLOCATION = float(_get_secret('MAX_PCT_ALLOCATION', '0.95'))   # 95% of equity (leave 5% buffer)
 
