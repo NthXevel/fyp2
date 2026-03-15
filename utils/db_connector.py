@@ -17,6 +17,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+# Import models from your existing project structure
 from models.db_models import BacktestMetric, Base, MarketData, Prediction, TradeLog
 
 load_dotenv()
@@ -29,55 +30,44 @@ def _read_streamlit_secrets() -> dict:
     except Exception:
         return {}
 
-def _get_db_config() -> dict:
-    """
-    Retrieves database configuration from secrets or environment variables.
-    Prioritizes the 'postgres' section in Streamlit secrets.
-    """
+def get_database_url() -> str:
+    """Build DB URL from Streamlit secrets or environment variables."""
     secrets = _read_streamlit_secrets()
     
-    # 1. Check for a nested [postgres] section (Recommended for Streamlit)
-    if "postgres" in secrets and isinstance(secrets["postgres"], dict):
-        return secrets["postgres"]
-    
-    # 2. Check for top-level env vars/secrets
-    return {
-        "url": os.getenv("DATABASE_URL") or secrets.get("DATABASE_URL"),
-        "user": os.getenv("POSTGRES_USER") or secrets.get("POSTGRES_USER", "postgres"),
-        "password": os.getenv("POSTGRES_PASSWORD") or secrets.get("POSTGRES_PASSWORD"),
-        "host": os.getenv("POSTGRES_HOST") or secrets.get("POSTGRES_HOST"),
-        "port": os.getenv("POSTGRES_PORT") or secrets.get("POSTGRES_PORT", "5432"),
-        "database": os.getenv("POSTGRES_DB") or secrets.get("POSTGRES_DB", "postgres")
-    }
+    # 1. Check for a direct 'url' in a [postgres] section (Recommended)
+    pg_secrets = secrets.get("postgres", {})
+    if isinstance(pg_secrets, dict) and pg_secrets.get("url"):
+        url = pg_secrets["url"]
+    else:
+        # 2. Check for top-level DATABASE_URL or POSTGRES_URL
+        url = (os.getenv("DATABASE_URL") or 
+               secrets.get("DATABASE_URL") or 
+               os.getenv("POSTGRES_URL") or 
+               secrets.get("POSTGRES_URL"))
 
-def get_database_url() -> str:
-    """Build DB URL ensuring the correct driver and credentials."""
-    config = _get_db_config()
-    
-    # Use direct URL if provided, but ensure it uses the psycopg2 driver
-    if config.get("url"):
-        url = config["url"]
+    if url:
+        # SQLAlchemy requires 'postgresql://' or 'postgresql+psycopg2://'
         if url.startswith("postgres://"):
             url = url.replace("postgres://", "postgresql+psycopg2://", 1)
-        elif url.startswith("postgresql://"):
+        elif not url.startswith("postgresql+psycopg2://"):
             url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
         return url
 
-    # Fallback to discrete variables
-    user = config.get("user")
-    password = config.get("password")
-    host = config.get("host")
-    port = config.get("port")
-    db_name = config.get("database")
+    # 3. Fallback to building from discrete variables
+    user = os.getenv("POSTGRES_USER") or pg_secrets.get("user") or "postgres"
+    password = os.getenv("POSTGRES_PASSWORD") or pg_secrets.get("password") or "postgres"
+    host = os.getenv("POSTGRES_HOST") or pg_secrets.get("host") or "localhost"
+    port = os.getenv("POSTGRES_PORT") or pg_secrets.get("port") or "5432"
+    db_name = os.getenv("POSTGRES_DB") or pg_secrets.get("database") or "quantlearn"
     
     return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db_name}"
 
 @lru_cache(maxsize=1)
 def get_engine() -> Engine:
-    """Create and cache SQLAlchemy engine with SSL enforced for Cloud DBs."""
+    """Create and cache SQLAlchemy engine with SSL settings for Supabase."""
     secrets = _read_streamlit_secrets()
     
-    # Supabase/Cloud DBs REQUIRE sslmode=require
+    # Supabase requires SSL for external connections
     connect_args = {"sslmode": "require"}
     
     return create_engine(
@@ -91,14 +81,13 @@ def get_engine() -> Engine:
         future=True,
     )
 
-# --- Remaining helper functions kept identical to original for compatibility ---
-
 @lru_cache(maxsize=1)
 def get_session_factory() -> sessionmaker:
     return sessionmaker(bind=get_engine(), autoflush=False, autocommit=False, future=True)
 
 @contextmanager
 def session_scope() -> Iterable[Session]:
+    """Transactional session context manager."""
     session = get_session_factory()()
     try:
         yield session
@@ -110,15 +99,34 @@ def session_scope() -> Iterable[Session]:
         session.close()
 
 def init_database() -> None:
+    """Create all tables if they do not exist."""
     Base.metadata.create_all(bind=get_engine())
 
 def healthcheck() -> bool:
+    """Simple DB connectivity check."""
     try:
         with get_engine().connect() as conn:
             conn.execute(text("SELECT 1"))
         return True
     except Exception:
         return False
+
+# --- Helper functions for Data Operations ---
+
+def _normalize_market_df(df: pd.DataFrame, symbol: str, timeframe: str, source: str) -> list[dict]:
+    if df is None or df.empty:
+        return []
+    temp = df.copy()
+    if "date" in temp.columns:
+        temp["timestamp"] = pd.to_datetime(temp["date"], utc=True)
+    else:
+        temp = temp.reset_index().rename(columns={"date": "timestamp"})
+        temp["timestamp"] = pd.to_datetime(temp["timestamp"], utc=True)
+    for col in ["open", "high", "low", "close", "volume"]:
+        temp[col] = pd.to_numeric(temp[col], errors="coerce")
+    temp = temp.dropna(subset=["timestamp", "open", "high", "low", "close", "volume"])
+    temp["symbol"], temp["timeframe"], temp["source"] = symbol, timeframe, source
+    return temp[["symbol", "timeframe", "timestamp", "open", "high", "low", "close", "volume", "source"]].to_dict("records")
 
 def upsert_market_data(df: pd.DataFrame, symbol: str, timeframe: str = "15m", source: str = "yahoo") -> int:
     records = _normalize_market_df(df, symbol=symbol, timeframe=timeframe, source=source)
@@ -131,20 +139,6 @@ def upsert_market_data(df: pd.DataFrame, symbol: str, timeframe: str = "15m", so
     with session_scope() as session:
         session.execute(stmt)
     return len(records)
-
-def _normalize_market_df(df: pd.DataFrame, symbol: str, timeframe: str, source: str) -> list[dict]:
-    if df is None or df.empty: return []
-    temp = df.copy()
-    if "date" in temp.columns:
-        temp["timestamp"] = pd.to_datetime(temp["date"], utc=True)
-    else:
-        temp = temp.reset_index().rename(columns={"date": "timestamp"})
-        temp["timestamp"] = pd.to_datetime(temp["timestamp"], utc=True)
-    for col in ["open", "high", "low", "close", "volume"]:
-        temp[col] = pd.to_numeric(temp[col], errors="coerce")
-    temp = temp.dropna(subset=["timestamp", "open", "high", "low", "close", "volume"])
-    temp["symbol"], temp["timeframe"], temp["source"] = symbol, timeframe, source
-    return temp[["symbol", "timeframe", "timestamp", "open", "high", "low", "close", "volume", "source"]].to_dict("records")
 
 def insert_trade_log(**kwargs) -> None:
     with session_scope() as session:
