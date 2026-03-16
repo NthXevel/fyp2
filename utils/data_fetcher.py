@@ -99,7 +99,7 @@ class DataFetcher:
     def get_realtime_quote(self):
         """
         Get real-time quote including bid/ask and the latest 15m candle.
-        
+
         Returns:
             dict: Current stock quote data with bid/ask and 15m bar info
         """
@@ -114,12 +114,12 @@ class DataFetcher:
                 return None
 
             latest = data_1m.iloc[-1]
-            bid = info.get('bid', None)
-            ask = info.get('ask', None)
-            bid_size = info.get('bidSize', None)
-            ask_size = info.get('askSize', None)
+            bid = info.get('bid', None) if info else None
+            ask = info.get('ask', None) if info else None
+            bid_size = info.get('bidSize', None) if info else None
+            ask_size = info.get('askSize', None) if info else None
             spread = round(ask - bid, 4) if bid and ask else None
-            prev_close = info.get('previousClose', None)
+            prev_close = info.get('previousClose', None) if info else None
             current = latest['Close']
             day_change = round(current - prev_close, 2) if prev_close else None
             day_change_pct = round((current - prev_close) / prev_close * 100, 2) if prev_close else None
@@ -139,10 +139,10 @@ class DataFetcher:
                 'prev_close': prev_close,
                 'day_change': day_change,
                 'day_change_pct': day_change_pct,
-                'day_high': info.get('dayHigh', None),
-                'day_low': info.get('dayLow', None),
-                'fifty_day_avg': info.get('fiftyDayAverage', None),
-                'two_hundred_day_avg': info.get('twoHundredDayAverage', None),
+                'day_high': info.get('dayHigh', None) if info else None,
+                'day_low': info.get('dayLow', None) if info else None,
+                'fifty_day_avg': info.get('fiftyDayAverage', None) if info else None,
+                'two_hundred_day_avg': info.get('twoHundredDayAverage', None) if info else None,
             }
 
             # Attach latest 15m candle info
