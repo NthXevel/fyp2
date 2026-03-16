@@ -11,3 +11,4 @@ plotly>=5.18.0
 optuna>=3.4.0
 SQLAlchemy>=2.0.25
 psycopg2-binary>=2.9.9
+streamlit_autorefresh

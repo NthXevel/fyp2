@@ -14,21 +14,21 @@ Confidence Threshold:   0.55
 Stop-Loss:              2.0% (per order value)
 Take-Profit:            3.0% (per order value)
 Initial Capital:        $100,000.00
-Final Capital:          $101,739.75
-Cumulative Return:      1.74%
+Final Capital:          $101,459.19
+Cumulative Return:      1.46%
 
-Best CV AUC:            0.6480
+Best CV AUC:            0.6463
 Baseline Test Accuracy: 0.8583
 Baseline Test AUC:      0.6450
-Final Test Accuracy:    0.5936
-Final Test AUC:         0.6317
-Final Test F1:          0.3006
+Final Test Accuracy:    0.5820
+Final Test AUC:         0.6334
+Final Test F1:          0.2990
 
 --- Target Metrics ---
-Accuracy:   0.5936  (target >= 0.55)  [MET]
-Sharpe:     0.430   (target >= 0.5)   [MISSED]
-Max DD:     -1.03%  (target <= 10%)   [MET]
+Accuracy:   0.5820  (target >= 0.55)  [MET]
+Sharpe:     0.444   (target >= 0.5)   [MISSED]
+Max DD:     -0.84%  (target <= 10%)   [MET]
 
 Win Rate:               100.00%
-Number of Trades:       84
-Best Params:            {'n_estimators': 111, 'max_depth': 3, 'learning_rate': 0.0180005463683788, 'subsample': 0.805908311322534, 'colsample_bytree': 0.5371069031060982, 'min_child_weight': 6, 'gamma': 0.10550883029208266, 'reg_alpha': 0.22962748926771367, 'reg_lambda': 0.00020400225744314723, 'scale_pos_weight': np.float64(6.564549895324494), 'objective': 'binary:logistic', 'eval_metric': 'auc', 'random_state': 42, 'verbosity': 0}
+Number of Trades:       68
+Best Params:            {'n_estimators': 111, 'max_depth': 3, 'learning_rate': 0.010038982933939617, 'subsample': 0.8007555978437693, 'colsample_bytree': 0.623616291499737, 'min_child_weight': 4, 'gamma': 0.40923865747772686, 'reg_alpha': 0.0006312955050065854, 'reg_lambda': 0.4975391987540849, 'scale_pos_weight': np.float64(6.564549895324494), 'objective': 'binary:logistic', 'eval_metric': 'auc', 'random_state': 42, 'verbosity': 0}

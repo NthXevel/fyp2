@@ -1,6 +1,5 @@
 """
 Database connector and helper utilities for PostgreSQL.
-Updated for Supabase Cloud Deployment.
 """
 from __future__ import annotations
 
@@ -51,6 +50,8 @@ def get_database_url() -> str:
             url = url.replace("postgres://", "postgresql+psycopg2://", 1)
         elif not url.startswith("postgresql+psycopg2://"):
             url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        # Remove channel_binding param (not supported by psycopg2, handled via connect_args)
+        url = url.replace("&channel_binding=require", "").replace("?channel_binding=require&", "?").replace("?channel_binding=require", "")
         return url
 
     # 3. Fallback to building from discrete variables
@@ -64,21 +65,18 @@ def get_database_url() -> str:
 
 @lru_cache(maxsize=1)
 def get_engine() -> Engine:
-    """Create and cache SQLAlchemy engine with SSL settings for Supabase."""
+    """Create and cache SQLAlchemy engine."""
     secrets = _read_streamlit_secrets()
-    
-    # Supabase requires SSL for external connections
-    connect_args = {"sslmode": "require"}
-    
+
     return create_engine(
         get_database_url(),
-        connect_args=connect_args,
-        pool_size=int(os.getenv("DB_POOL_SIZE") or secrets.get("DB_POOL_SIZE", 8)),
-        max_overflow=int(os.getenv("DB_MAX_OVERFLOW") or secrets.get("DB_MAX_OVERFLOW", 16)),
-        pool_recycle=int(os.getenv("DB_POOL_RECYCLE") or secrets.get("DB_POOL_RECYCLE", 1800)),
+        pool_size=int(os.getenv("DB_POOL_SIZE") or secrets.get("DB_POOL_SIZE", 5)),
+        max_overflow=int(os.getenv("DB_MAX_OVERFLOW") or secrets.get("DB_MAX_OVERFLOW", 10)),
+        pool_recycle=int(os.getenv("DB_POOL_RECYCLE") or secrets.get("DB_POOL_RECYCLE", 300)),
         pool_timeout=int(os.getenv("DB_POOL_TIMEOUT") or secrets.get("DB_POOL_TIMEOUT", 30)),
         pool_pre_ping=True,
         future=True,
+        connect_args={"sslmode": "require"},
     )
 
 @lru_cache(maxsize=1)
@@ -149,10 +147,15 @@ def insert_prediction(**kwargs) -> None:
         session.add(Prediction(**kwargs))
 
 def upsert_backtest_metric(**kwargs) -> None:
-    stmt = insert(BacktestMetric).values(**kwargs)
+    # Map ORM attribute names to actual column names for excluded reference
+    attr_to_col = {a.key: a.name for a in BacktestMetric.__table__.columns}
+    stmt = insert(BacktestMetric.__table__).values(
+        {attr_to_col.get(k, k): v for k, v in kwargs.items()}
+    )
+    update_cols = {attr_to_col.get(k, k) for k in kwargs if k not in ("run_id", "symbol", "timeframe")}
     stmt = stmt.on_conflict_do_update(
         constraint="uq_backtest_run_symbol_tf",
-        set_={k: getattr(stmt.excluded, k) for k in kwargs.keys() if k not in ["run_id", "symbol", "timeframe"]},
+        set_={col: getattr(stmt.excluded, col) for col in update_cols},
     )
     with session_scope() as session:
         session.execute(stmt)

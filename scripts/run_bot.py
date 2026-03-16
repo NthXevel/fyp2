@@ -141,36 +141,36 @@ class TradingBot:
             else:
                 print("No position to sell")
 
-    def run(self, check_interval=3600):
+    def run(self, check_interval=300, ml_interval=900):
         """
-        Run the trading bot in a loop
+        Run the trading bot in a loop.
+
+        The bot wakes every *check_interval* seconds to evaluate SL/TP
+        against the real-time quote.  The heavier ML prediction cycle only
+        runs every *ml_interval* seconds (aligned to 15-min bars).
 
         Args:
-            check_interval: Seconds between checks (default: 1 hour)
+            check_interval: Seconds between risk-management checks (default: 300 = 5 min)
+            ml_interval:    Seconds between ML prediction cycles     (default: 900 = 15 min)
         """
         print("\n" + "=" * 60)
         print(f"Starting Trading Bot - {STOCK_SYMBOL}")
+        print(f"  Risk-management poll : every {check_interval}s")
+        print(f"  ML prediction cycle  : every {ml_interval}s")
         print("=" * 60)
+
+        last_ml_run = 0  # epoch – forces ML to run on the first iteration
 
         try:
             while True:
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 print(f"\n[{timestamp}] Checking market conditions...")
 
-                # Get latest features
-                features_data = self.get_latest_features()
-                if features_data is None:
-                    print("Failed to fetch latest data. Retrying...")
-                    time.sleep(60)
-                    continue
-                features, macro_sma_4h, latest_close = features_data
-
-                # Fetch real-time stock info
+                # ── 1. Real-time quote & position (cheap, every wake-up) ──
                 quote = self.fetcher.get_realtime_quote()
                 if quote:
                     print(f"  {STOCK_SYMBOL}  Last: ${quote['c']:.2f}  Vol: {int(quote['v']):,}")
 
-                # Account & position snapshot
                 account = self.executor.get_account_info()
                 position = self.executor.get_position()
                 if account:
@@ -178,9 +178,8 @@ class TradingBot:
                 if position:
                     print(f"  Position: {position['qty']} shares  P&L: ${position['unrealized_pl']:.2f}")
 
-                # ── Check stop-loss / take-profit first ──────────────
-                position = self.executor.get_position()
-                if position and quote:
+                # ── 2. Check stop-loss / take-profit FIRST ────────────────
+                if position and position['qty'] > 0 and quote:
                     sl_tp_action = self.signal.check_stop_loss_take_profit(
                         self.entry_price, quote['c']
                     )
@@ -190,50 +189,65 @@ class TradingBot:
                         time.sleep(check_interval)
                         continue
 
-                # Make prediction
-                probabilities = self.trainer.predict(features)
-                action, confidence = self.signal.decide_trade(probabilities)
+                # ── 3. ML prediction (only every ml_interval) ─────────────
+                now = time.time()
+                if now - last_ml_run >= ml_interval:
+                    last_ml_run = now
 
-                # Macro trend filter: only buy when current price is above 4h SMA.
-                if action == 'buy':
-                    trend_price = quote['c'] if quote else latest_close
-                    if macro_sma_4h is None or trend_price is None:
+                    features_data = self.get_latest_features()
+                    if features_data is None:
+                        print("Failed to fetch latest data. Retrying...")
+                        time.sleep(60)
+                        continue
+                    features, macro_sma_4h, latest_close = features_data
+
+                    # Make prediction
+                    probabilities = self.trainer.predict(features)
+                    action, confidence = self.signal.decide_trade(probabilities)
+
+                    # Macro trend filter: only buy when price > 4h SMA
+                    if action == 'buy':
+                        trend_price = quote['c'] if quote else latest_close
+                        if macro_sma_4h is None or trend_price is None:
+                            action = 'hold'
+                            print("Trend filter unavailable (missing Macro_SMA_4H) -> HOLD")
+                        elif trend_price <= macro_sma_4h:
+                            action = 'hold'
+                            print(f"Trend filter blocked BUY: price ${trend_price:.2f} <= 4h SMA ${macro_sma_4h:.2f}")
+
+                    # Cooldown only suppresses model-driven SELL signals.
+                    # SL/TP executed above bypasses this guard.
+                    if action == 'sell' and self.sell_cooldown_remaining > 0:
+                        print(f"Cooldown active ({self.sell_cooldown_remaining} bars remaining) -> ignoring model SELL")
                         action = 'hold'
-                        print("Trend filter unavailable (missing Macro_SMA_4H) -> HOLD")
-                    elif trend_price <= macro_sma_4h:
-                        action = 'hold'
-                        print(f"Trend filter blocked BUY: price ${trend_price:.2f} <= 4h SMA ${macro_sma_4h:.2f}")
 
-                # Cooldown only suppresses model-driven SELL signals.
-                # SL/TP executes earlier in the loop and bypasses this guard.
-                if action == 'sell' and self.sell_cooldown_remaining > 0:
-                    print(f"Cooldown active ({self.sell_cooldown_remaining} bars remaining) -> ignoring model SELL")
-                    action = 'hold'
+                    print(f"Decision: {action.upper()} (confidence: {confidence:.2%})")
 
-                print(f"Decision: {action.upper()} (confidence: {confidence:.2%})")
+                    try:
+                        insert_prediction(
+                            prediction_time=datetime.now(timezone.utc),
+                            symbol=STOCK_SYMBOL,
+                            signal=action,
+                            prob_up=float(probabilities[0][1]),
+                            prob_down=float(probabilities[0][0]),
+                            confidence=float(confidence),
+                            timeframe=DATA_INTERVAL,
+                            model_name="xgboost",
+                        )
+                    except Exception as exc:
+                        print(f"Warning: prediction logging failed: {exc}")
 
-                try:
-                    insert_prediction(
-                        prediction_time=datetime.now(timezone.utc),
-                        symbol=STOCK_SYMBOL,
-                        signal=action,
-                        prob_up=float(probabilities[0][1]),
-                        prob_down=float(probabilities[0][0]),
-                        confidence=float(confidence),
-                        timeframe=DATA_INTERVAL,
-                        model_name="xgboost",
-                    )
-                except Exception as exc:
-                    print(f"Warning: prediction logging failed: {exc}")
+                    # Execute trade
+                    if action in ['buy', 'sell']:
+                        self.execute_trade(action, confidence)
 
-                # Execute trade
-                if action in ['buy', 'sell']:
-                    self.execute_trade(action, confidence)
-
-                # Count down sell cooldown one bar at a time while holding a position.
-                position_after = self.executor.get_position()
-                if position_after and position_after['qty'] > 0 and self.sell_cooldown_remaining > 0:
-                    self.sell_cooldown_remaining -= 1
+                    # Count down sell cooldown one bar at a time while holding.
+                    position_after = self.executor.get_position()
+                    if position_after and position_after['qty'] > 0 and self.sell_cooldown_remaining > 0:
+                        self.sell_cooldown_remaining -= 1
+                else:
+                    print("  (SL/TP check only — next ML prediction in "
+                          f"{int(ml_interval - (now - last_ml_run))}s)")
 
                 # Wait for next check
                 print(f"Next check in {check_interval}s...")
@@ -256,8 +270,8 @@ def main():
         print(f"  Portfolio Value: ${account['portfolio_value']:.2f}")
         print(f"  Buying Power: ${account['buying_power']:.2f}")
 
-    # Run the bot — check every 15 minutes to match the 15m bar interval
-    bot.run(check_interval=900)
+    # Risk-management poll every 5 min; ML prediction every 15 min
+    bot.run(check_interval=300, ml_interval=900)
 
 
 if __name__ == "__main__":

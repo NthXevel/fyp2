@@ -12,6 +12,8 @@ from datetime import datetime
 from pathlib import Path
 from sqlalchemy import text
 
+from streamlit_autorefresh import st_autorefresh
+
 from config.settings import (
     STOCK_SYMBOL, CONFIDENCE_THRESHOLD,
     STOP_LOSS_PCT, TAKE_PROFIT_PCT,
@@ -483,9 +485,11 @@ def main():
                 executor.close_all_positions()
                 st.warning("All positions closed!")
 
-    # Auto-refresh
+    # Auto-refresh every 5 minutes (300 000 ms)
     st.divider()
-    if st.button("🔃 Refresh"):
+    st_autorefresh(interval=5 * 60 * 1000, key="dashboard_autorefresh")
+    st.caption("Dashboard auto-refreshes every 5 minutes.")
+    if st.button("🔃 Refresh Now"):
         st.rerun()
 
 
