@@ -80,19 +80,9 @@ def is_crypto(symbol: str) -> bool:
     return '/' in symbol or symbol.upper().endswith('USD') and '-' in symbol
 
 def yahoo_symbol(symbol: str) -> str:
-    """Convert internal symbol notation to Yahoo Finance ticker.
-    BTC/USD  → BTC-USD
-    ETH/USD  → ETH-USD
-    AAPL     → AAPL  (unchanged)
-    """
     return symbol.replace('/', '-')
 
 def alpaca_symbol(symbol: str) -> str:
-    """Convert internal symbol notation to Alpaca API format.
-    BTC-USD  → BTC/USD
-    BTC/USD  → BTC/USD  (unchanged)
-    AAPL     → AAPL     (unchanged)
-    """
     if '-' in symbol and symbol.upper().endswith('USD'):
         return symbol.replace('-', '/')
     return symbol

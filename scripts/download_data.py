@@ -32,7 +32,7 @@ def download_stock_data(symbol: str, days: int = 365, interval: str = "1d") -> p
     Download historical OHLCV data for a given symbol from Yahoo Finance.
 
     Args:
-        symbol:   Ticker symbol (e.g. 'AAPL' or 'BTC/USD').
+        symbol:   Ticker symbol ('BTC/USD').
         days:     Number of calendar days of history to fetch.
         interval: Data interval – '1d', '1h', '5m', etc.
 

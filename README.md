@@ -10,12 +10,16 @@ fyp2/
 │   ├── __init__.py
 │   └── settings.py                 # Environment variables & hyperparameters
 ├── data/                           # Raw & processed market data
-│   ├── BTCUSD_1d.csv
+│   ├── ADAUSD_15m.csv
+│   ├── BNBUSD_15m.csv
 │   ├── BTCUSD_15m.csv
-│   ├── ETHUSD_1d.csv
-│   └── ETHUSD_15m.csv
+│   ├── ETHUSD_15m.csv
+│   ├── SOLUSD_15m.csv
+│   └── XRPUSD_15m.csv
 ├── models/                         # Trained XGBoost models
 │   ├── __init__.py
+│   ├── db_models.py                # SQLAlchemy ORM models for QuantLearn PostgreSQL
+│   ├── predictor.py                # Loads trained model and generates live trade signals
 │   ├── trainer.py                  # XGBoost training & evaluation
 │   └── saved/                      # Serialised .pkl model files
 ├── strategies/                     # Signal generation & position sizing
@@ -31,14 +35,17 @@ fyp2/
 ├── monitoring/                     # Dashboard & alerting
 │   ├── __init__.py
 │   ├── dashboard.py                # Console display for quotes & account
+│   ├── bot_manager.py              # Manage the trading bot subprocess.
 │   └── logger.py                   # Trade logging to CSV
 ├── utils/                          # Shared utilities
 │   ├── __init__.py
+│   ├── db_connector.py             # Database connector and helper utilities for PostgreSQL
 │   └── data_fetcher.py             # Yahoo Finance data fetching
 ├── scripts/                        # Entry point scripts
 │   ├── __init__.py
 │   ├── run_bot.py                  # Live trading bot
 │   ├── train.py                    # Model training
+│   ├── accumulate_data.py          # Accumulate intraday bars
 │   └── download_data.py            # Data downloader
 ├── reports/                        # Generated reports & plots
 ├── experiments.ipynb               # EDA, tuning, backtesting notebook
@@ -51,7 +58,7 @@ fyp2/
 ### 1. Clone/Create Environment
 
 ```bash
-cd c:\Users\jieha\fyp2
+cd c:\Users\fyp2
 ```
 
 ### 2. Create Virtual Environment

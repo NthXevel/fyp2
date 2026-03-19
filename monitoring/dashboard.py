@@ -24,7 +24,7 @@ from execution.alpaca_executor import TradingExecutor
 from monitoring.bot_manager import is_running, start, stop, get_log
 from utils.db_connector import get_engine, init_database
 
-st.set_page_config(page_title="Quant Bot Dashboard", layout="wide", page_icon="📈")
+st.set_page_config(page_title="QuantLearn", layout="wide", page_icon="📈")
 
 
 @st.cache_resource
@@ -212,7 +212,7 @@ def render_market_chart(df, symbol):
 
 def main():
     init_database()
-    st.title("📈 XGBoost Quant Bot — Live Dashboard")
+    st.title("📈 QuantLearn — Live Dashboard")
     st.caption(f"Last refreshed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     executor = get_executor()
