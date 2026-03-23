@@ -64,7 +64,7 @@ MAX_PCT_ALLOCATION = float(_get_secret('MAX_PCT_ALLOCATION', '0.95'))   # 95% of
 
 # Risk management -- per-order stop-loss / take-profit (based on order value)
 STOP_LOSS_PCT = float(_get_secret('STOP_LOSS_PCT', '0.02'))     
-TAKE_PROFIT_PCT = float(_get_secret('TAKE_PROFIT_PCT', '0.03'))   
+TAKE_PROFIT_PCT = float(_get_secret('TAKE_PROFIT_PCT', '0.015'))   
 
 # Data Configuration (live trading interval — kept for run_bot / data_fetcher)
 DATA_INTERVAL = _get_secret('DATA_INTERVAL', '15m')  # 15-minute bars

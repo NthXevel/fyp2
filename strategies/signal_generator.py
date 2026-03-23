@@ -26,18 +26,7 @@ class SignalGenerator:
         self.stop_loss_pct = stop_loss_pct
         self.take_profit_pct = take_profit_pct
 
-    def decide_trade(self, probabilities):
-        """
-        Decide whether to buy, sell, or hold based on model probabilities.
-
-        Args:
-            probabilities: Model predict_proba output for a single sample
-                           [[prob_down, prob_up]]
-
-        Returns:
-            tuple: (action: str, confidence: float)
-                   action is 'buy', 'sell', or 'hold'
-        """
+    def decide_trade(self, probabilities, in_position=False):
         prob_down = probabilities[0][0]
         prob_up = probabilities[0][1]
 
@@ -45,6 +34,9 @@ class SignalGenerator:
             return 'buy', prob_up
         elif prob_down > self.confidence_threshold:
             return 'sell', prob_down
+        elif in_position and prob_up < self.confidence_threshold:
+            # Sell immediately if we own it but confidence drops below threshold
+            return 'sell', prob_up
         else:
             return 'hold', max(prob_up, prob_down)
 
